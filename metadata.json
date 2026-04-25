@@ -1,0 +1,6 @@
+{
+  "name": "LexRide",
+  "description": "Smart Ride Coordination for Ghana's Commuters - Split rides, save money, and commute safer.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": []
+}
