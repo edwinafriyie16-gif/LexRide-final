@@ -1540,6 +1540,23 @@ export default function App() {
 
               {screen === 'MATCH_RESULTS' && (
                 <ScreenWrapper screen="MATCH_RESULTS" key="results" title="Suggested" onBack={() => setScreen('PLAN_TRIP')}>
+                  {matchedRiders.length === 0 ? (
+                    <div className="flex flex-col items-center text-center gap-4 pt-8">
+                      <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+                        <Car size={30} className="text-primary" strokeWidth={1.5} />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="font-bold text-black">No one's heading that way yet</div>
+                        <p className="text-xs text-gray-500 leading-relaxed px-4">
+                          Nobody nearby is going to {destZone || 'this destination'} right now. Instead of waiting,
+                          create your own ride and send the link to a WhatsApp group, classmates, or anywhere else you like — the first person to join gets it started.
+                        </p>
+                      </div>
+                      <Button onClick={() => setScreen('PLAN_TRIP')} className="w-full">
+                        Create Ride & Get Share Link
+                      </Button>
+                    </div>
+                  ) : (
                   <div className="space-y-4">
                     {matchedRiders.map(rider => (
                       <Card key={rider.id} onClick={() => {
@@ -1570,6 +1587,7 @@ export default function App() {
                     ))}
                     <Button disabled={selectedRiderIds.size === 0} onClick={() => setScreen('MEETING_POINT')}>Continue ({selectedRiderIds.size})</Button>
                   </div>
+                  )}
                 </ScreenWrapper>
               )}
 
