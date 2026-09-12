@@ -1442,6 +1442,13 @@ export default function App() {
                       </div>
                     </Card>
 
+                    <div className="text-center px-2">
+                      <div className="font-bold text-black text-sm">Share your ride with friends 🚗</div>
+                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                        Send this to your WhatsApp groups, hostel chat, or classmates — anyone heading your way can tap the link and join you.
+                      </p>
+                    </div>
+
                     <div className="space-y-2">
                       <label className="text-[9px] uppercase font-bold text-gray-400 ml-1">Shareable Link</label>
                       <div className="flex gap-2">
@@ -1462,7 +1469,7 @@ export default function App() {
                         Joined ({activeSharedRide.joined.length}/{activeSharedRide.seats})
                       </div>
                       {activeSharedRide.joined.length === 0 ? (
-                        <p className="text-xs text-gray-400 ml-1">No one has joined yet — send the link above.</p>
+                        <p className="text-xs text-gray-400 ml-1">No one's joined yet — share the link above to get your ride filled faster.</p>
                       ) : (
                         <div className="space-y-2">
                           {activeSharedRide.joined.map(j => (
