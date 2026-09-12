@@ -1136,7 +1136,7 @@ export default function App() {
       <div className="glow-blob top-[-10%] left-[-10%] w-[600px] h-[600px] bg-primary" />
       <div className="glow-blob bottom-[-10%] right-[-10%] w-[600px] h-[600px] bg-primary" />
 
-      <div className="z-10 w-full max-w-6xl grid grid-cols-12 gap-8 items-center h-full max-h-[800px]">
+      <div className="z-10 w-full h-full lg:h-auto lg:max-w-6xl grid grid-cols-12 gap-8 items-center lg:max-h-[800px]">
         {/* PC Sidebar */}
         <div className="hidden lg:flex col-span-3 flex-col gap-6">
           <h1 className="text-5xl font-bold text-primary">LexRide</h1>
@@ -1153,10 +1153,10 @@ export default function App() {
           </Card>
         </div>
 
-        {/* Center: Mobile Frame */}
-        <div className="col-span-12 lg:col-span-6 flex justify-center">
-          <div className="phone-frame relative bg-white overflow-hidden shadow-2xl border-[8px] border-black rounded-[3rem] w-[320px] h-[650px]">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-black rounded-b-2xl z-50 flex items-center justify-center gap-2">
+        {/* Center: full-screen on phones, boxed preview on desktop */}
+        <div className="col-span-12 lg:col-span-6 flex justify-center h-full">
+          <div className="phone-frame w-full h-full lg:w-[320px] lg:h-[650px] lg:rounded-[3rem] lg:border-[8px] lg:border-black lg:shadow-2xl">
+            <div className="hidden lg:flex absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-black rounded-b-2xl z-50 items-center justify-center gap-2">
                <div className="w-2 h-2 rounded-full bg-white/10" />
                <div className="w-8 h-1 rounded-full bg-white/10" />
             </div>
