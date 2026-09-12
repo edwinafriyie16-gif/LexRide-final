@@ -212,22 +212,18 @@ const Card = ({ children, className = '', onClick, variant = 'phone' }: { childr
   );
 };
 
-// Faint repeating car-icon pattern for the white page background (visible
-// around the boxed preview on desktop, and briefly on mobile before the
-// phone-frame content paints over it).
-const CarBackdrop = () => {
-  const cars = Array.from({ length: 24 });
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none select-none" aria-hidden="true">
-      <div className="absolute inset-0 grid grid-cols-4 sm:grid-cols-6 gap-10 p-6 opacity-[0.06] rotate-[-8deg] scale-125">
-        {cars.map((_, i) => (
-          <Car key={i} size={64} strokeWidth={1.5} className="text-primary" />
-        ))}
-      </div>
-      <div className="absolute inset-0 bg-gradient-to-b from-white via-white/70 to-white" />
+// Faint repeating car-icon pattern behind every screen, so the app reads
+// as "white with a car design in the background" on the actual phone,
+// not just around the desktop preview box.
+const CarBackdrop = () => (
+  <div className="absolute inset-0 overflow-hidden pointer-events-none select-none z-0" aria-hidden="true">
+    <div className="absolute inset-0 grid grid-cols-3 gap-8 p-4 opacity-[0.07] rotate-[-8deg] scale-125">
+      {Array.from({ length: 30 }).map((_, i) => (
+        <Car key={i} size={48} strokeWidth={1.5} className="text-primary" />
+      ))}
     </div>
-  );
-};
+  </div>
+);
 
   // Meeting Point Suggestions using real GPS (Finding center of all riders)
 const MeetingPointSuggestions = ({ ridersCoords, userCoords, gpsAddress, selectedMeetingPoint, setSelectedMeetingPoint }: {
@@ -1150,8 +1146,6 @@ export default function App() {
 
   return (
     <div className="w-full h-dvh bg-white text-white flex items-center justify-center font-sans overflow-hidden relative">
-      <CarBackdrop />
-
       <div className="z-10 w-full h-full lg:h-auto lg:max-w-6xl grid grid-cols-12 gap-8 items-center lg:max-h-[800px]">
         {/* PC Sidebar */}
         <div className="hidden lg:flex col-span-3 flex-col gap-6">
@@ -1172,6 +1166,7 @@ export default function App() {
         {/* Center: full-screen on phones, boxed preview on desktop */}
         <div className="col-span-12 lg:col-span-6 flex justify-center h-full">
           <div className="phone-frame w-full h-full lg:w-[320px] lg:h-[650px] lg:rounded-[3rem] lg:border-[8px] lg:border-black lg:shadow-2xl">
+            <CarBackdrop />
             <div className="hidden lg:flex absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-black rounded-b-2xl z-50 items-center justify-center gap-2">
                <div className="w-2 h-2 rounded-full bg-white/10" />
                <div className="w-8 h-1 rounded-full bg-white/10" />
