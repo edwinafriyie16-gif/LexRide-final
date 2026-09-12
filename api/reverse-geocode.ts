@@ -6,6 +6,9 @@ export default async function handler(req: any, res: any) {
     const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latlng}&key=${GOOGLE_MAPS_API_KEY}`;
     const response = await fetch(url);
     const data = await response.json();
+    if (data.status !== 'OK') {
+      console.error(`[ReverseGeocode] Google status: ${data.status} - ${data.error_message || 'no message'}`);
+    }
     res.status(200).json(data);
   } catch (error) {
     console.error("[ReverseGeocode] Error:", error);

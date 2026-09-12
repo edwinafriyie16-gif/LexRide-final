@@ -80,6 +80,30 @@ const CITIES_DATA: Record<City, string[]> = {
   'Tamale': ['UDS', 'Market', 'Hospital', 'Airport Road']
 };
 
+// Approximate city-center coordinates, used only as a last-resort label
+// when reverse geocoding fails entirely -- "Near Kumasi" is at least
+// recognizable, unlike raw coordinates.
+const CITY_CENTERS: { name: City; lat: number; lng: number }[] = [
+  { name: 'Kumasi', lat: 6.6885, lng: -1.6244 },
+  { name: 'Accra', lat: 5.6037, lng: -0.1870 },
+  { name: 'Cape Coast', lat: 5.1053, lng: -1.2466 },
+  { name: 'Tamale', lat: 9.4008, lng: -0.8393 },
+];
+
+const nearestCityLabel = (lat: number, lng: number): string => {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  let closest = CITY_CENTERS[0];
+  let minDist = Infinity;
+  for (const c of CITY_CENTERS) {
+    const dLat = toRad(c.lat - lat);
+    const dLng = toRad(c.lng - lng);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat)) * Math.cos(toRad(c.lat)) * Math.sin(dLng / 2) ** 2;
+    const dist = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    if (dist < minDist) { minDist = dist; closest = c; }
+  }
+  return minDist < 60 ? `Near ${closest.name}` : `Near ${closest.name} (${Math.round(minDist)}km away)`;
+};
+
 interface LXRUser {
   firstName: string;
   lastName: string;
@@ -651,7 +675,7 @@ export default function App() {
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return;
         console.warn('Geocoding failed', err);
-        const fallbackLabel = `Area near ${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+        const fallbackLabel = nearestCityLabel(lat, lng);
         setGpsAddress(fallbackLabel);
         setPickupZone(fallbackLabel);
         setHasResolvedAddress(true);
