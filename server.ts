@@ -1,6 +1,35 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import { randomBytes } from "crypto";
+
+interface SharedRideJoiner {
+  id: string;
+  firstName: string;
+  joinedAt: number;
+}
+
+interface SharedRide {
+  id: string;
+  fromLabel: string;
+  toLabel: string;
+  toLat?: number;
+  toLng?: number;
+  time: string;
+  seats: number;
+  platform: string;
+  creatorName: string;
+  createdAt: number;
+  joined: SharedRideJoiner[];
+}
+
+// In-memory store. Fine for a prototype; swap for a real DB (Postgres/Redis)
+// before relying on this across server restarts or multiple instances.
+const sharedRides = new Map<string, SharedRide>();
+
+function makeRideId(): string {
+  return randomBytes(4).toString("hex");
+}
 
 async function startServer() {
   const app = express();
@@ -8,6 +37,55 @@ async function startServer() {
   const GOOGLE_MAPS_API_KEY = process.env.GEMINI_API_KEY;
 
   app.use(express.json());
+
+  // Create a shareable ride. Returns { id } used to build the join link.
+  app.post("/api/rides", (req, res) => {
+    try {
+      const { fromLabel, toLabel, toLat, toLng, time, seats, platform, creatorName } = req.body || {};
+      if (!fromLabel || !toLabel || !time || !creatorName) {
+        return res.status(400).json({ error: "Missing required ride fields" });
+      }
+      const id = makeRideId();
+      const ride: SharedRide = {
+        id,
+        fromLabel,
+        toLabel,
+        toLat,
+        toLng,
+        time,
+        seats: Number(seats) || 3,
+        platform: platform || "Bolt",
+        creatorName,
+        createdAt: Date.now(),
+        joined: [],
+      };
+      sharedRides.set(id, ride);
+      res.json(ride);
+    } catch (error) {
+      console.error("[CreateRide] Error:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // Fetch a shared ride by id (used by the join-via-link screen).
+  app.get("/api/rides/:id", (req, res) => {
+    const ride = sharedRides.get(req.params.id);
+    if (!ride) return res.status(404).json({ error: "Ride not found" });
+    res.json(ride);
+  });
+
+  // Join a shared ride.
+  app.post("/api/rides/:id/join", (req, res) => {
+    const ride = sharedRides.get(req.params.id);
+    if (!ride) return res.status(404).json({ error: "Ride not found" });
+    const { firstName } = req.body || {};
+    if (!firstName) return res.status(400).json({ error: "Missing firstName" });
+    if (ride.joined.length >= ride.seats) {
+      return res.status(409).json({ error: "Ride is full" });
+    }
+    ride.joined.push({ id: makeRideId(), firstName, joinedAt: Date.now() });
+    res.json(ride);
+  });
 
   // API Proxy for Google Nearby Search (Places API New)
   app.get("/api/nearbysearch", async (req, res) => {

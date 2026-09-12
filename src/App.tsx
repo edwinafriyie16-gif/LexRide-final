@@ -45,7 +45,28 @@ type AppScreen =
   | 'SIGN_UP' | 'SIGN_IN' | 'OTP' | 'HOME' | 'PLAN_TRIP' | 'MATCHING' 
   | 'MATCH_RESULTS' | 'MEETING_POINT' | 'ACTION_SCREEN' | 'GROUP_CHAT' 
   | 'RIDE_TRACKING' | 'MY_RIDES' | 'INBOX' | 'PROFILE' | 'SUPPORT' 
-  | 'EDIT_PROFILE' | 'TRUST_SAFETY' | 'NOTIFICATIONS' | 'RATING';
+  | 'EDIT_PROFILE' | 'TRUST_SAFETY' | 'NOTIFICATIONS' | 'RATING'
+  | 'SHARE_RIDE' | 'JOIN_RIDE';
+
+interface SharedRideJoiner {
+  id: string;
+  firstName: string;
+  joinedAt: number;
+}
+
+interface SharedRide {
+  id: string;
+  fromLabel: string;
+  toLabel: string;
+  toLat?: number;
+  toLng?: number;
+  time: string;
+  seats: number;
+  platform: string;
+  creatorName: string;
+  createdAt: number;
+  joined: SharedRideJoiner[];
+}
 
 type TimeWindow = 'Now' | '15 min' | '30 min' | '1 hour';
 type Platform = 'Uber' | 'Bolt' | 'Yango';
@@ -678,6 +699,17 @@ export default function App() {
   const [destSuggestions, setDestSuggestions] = useState<{name: string, fullName: string, lat: number, lng: number}[]>([]);
   const [selectedDest, setSelectedDest] = useState<{lat: number, lng: number} | null>(null);
 
+  // Shareable ride-link flow
+  const [seatsWanted, setSeatsWanted] = useState(3);
+  const [activeSharedRide, setActiveSharedRide] = useState<SharedRide | null>(null);
+  const [isCreatingRide, setIsCreatingRide] = useState(false);
+  const [createRideError, setCreateRideError] = useState<string | null>(null);
+  const [joinRideId, setJoinRideId] = useState<string | null>(null);
+  const [joinRideData, setJoinRideData] = useState<SharedRide | null>(null);
+  const [joinRideError, setJoinRideError] = useState<string | null>(null);
+  const [isJoiningRide, setIsJoiningRide] = useState(false);
+  const [hasJoinedRide, setHasJoinedRide] = useState(false);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       if (destZone.length >= 3 && !selectedDest) {
@@ -932,6 +964,107 @@ export default function App() {
     };
     setUser(newUser);
     setScreen('HOME');
+  };
+
+  // On load, check for a ?ride=<id> link and jump straight to the join screen.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const rideId = params.get('ride');
+    if (rideId) setJoinRideId(rideId);
+  }, []);
+
+  useEffect(() => {
+    if (!joinRideId) return;
+    setJoinRideError(null);
+    fetch(`/api/rides/${joinRideId}`)
+      .then(async r => {
+        if (!r.ok) throw new Error((await r.json()).error || 'Ride not found');
+        return r.json();
+      })
+      .then((ride: SharedRide) => {
+        setJoinRideData(ride);
+        setScreen('JOIN_RIDE');
+      })
+      .catch(err => {
+        setJoinRideError(err.message || 'Could not load this ride link.');
+        setScreen('JOIN_RIDE');
+      });
+  }, [joinRideId]);
+
+  const createShareableRide = async () => {
+    if (!selectedDest || !destZone) return;
+    setIsCreatingRide(true);
+    setCreateRideError(null);
+    try {
+      const res = await fetch('/api/rides', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromLabel: gpsAddress,
+          toLabel: destZone,
+          toLat: selectedDest.lat,
+          toLng: selectedDest.lng,
+          time: timeWindow,
+          seats: seatsWanted,
+          platform,
+          creatorName: user?.firstName || 'A LexRide user',
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed to create ride');
+      const ride: SharedRide = await res.json();
+      setActiveSharedRide(ride);
+      setScreen('SHARE_RIDE');
+    } catch (err: any) {
+      setCreateRideError(err.message || 'Something went wrong creating the ride.');
+    } finally {
+      setIsCreatingRide(false);
+    }
+  };
+
+  const refreshActiveSharedRide = async () => {
+    if (!activeSharedRide) return;
+    try {
+      const res = await fetch(`/api/rides/${activeSharedRide.id}`);
+      if (res.ok) setActiveSharedRide(await res.json());
+    } catch { /* silent poll failure */ }
+  };
+
+  // Poll for new joiners while the share screen is open.
+  useEffect(() => {
+    if (screen !== 'SHARE_RIDE' || !activeSharedRide) return;
+    const interval = setInterval(refreshActiveSharedRide, 4000);
+    return () => clearInterval(interval);
+  }, [screen, activeSharedRide?.id]);
+
+  const joinSharedRide = async () => {
+    if (!joinRideData) return;
+    setIsJoiningRide(true);
+    setJoinRideError(null);
+    try {
+      const res = await fetch(`/api/rides/${joinRideData.id}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ firstName: user?.firstName || 'A rider' }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Could not join this ride');
+      const ride: SharedRide = await res.json();
+      setJoinRideData(ride);
+      setHasJoinedRide(true);
+    } catch (err: any) {
+      setJoinRideError(err.message || 'Could not join this ride.');
+    } finally {
+      setIsJoiningRide(false);
+    }
+  };
+
+  const shareRideLink = activeSharedRide
+    ? `${window.location.origin}${window.location.pathname}?ride=${activeSharedRide.id}`
+    : '';
+
+  const shareToWhatsApp = () => {
+    if (!activeSharedRide) return;
+    const text = `Going from ${activeSharedRide.fromLabel} to ${activeSharedRide.toLabel} at ${activeSharedRide.time} via ${activeSharedRide.platform}. Join my ride on LexRide and split the fare: ${shareRideLink}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   const startMatching = () => {
@@ -1215,7 +1348,129 @@ export default function App() {
                         </div>
                        )}
                     </div>
+                    {selectedDest && (
+                      <div className="space-y-2">
+                        <label className="text-[9px] uppercase font-bold text-gray-400 ml-1">Seats you want to fill</label>
+                        <div className="flex gap-2">
+                          {[1, 2, 3, 4].map(n => (
+                            <button
+                              key={n}
+                              onClick={() => setSeatsWanted(n)}
+                              className={`flex-1 py-3 rounded-xl text-sm font-bold border ${seatsWanted === n ? 'bg-primary text-white border-primary' : 'bg-gray-50 text-gray-500 border-gray-200'}`}
+                            >
+                              {n}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <Button disabled={!selectedDest} onClick={startMatching}>Find Split Matches</Button>
+                    <Button
+                      disabled={!selectedDest || isCreatingRide}
+                      onClick={createShareableRide}
+                      className="!bg-white !text-primary border-2 border-primary"
+                    >
+                      {isCreatingRide ? 'Creating link...' : 'Create Ride & Get Share Link'}
+                    </Button>
+                    {createRideError && <p className="text-[10px] text-red-500 font-bold ml-1">{createRideError}</p>}
+                    <p className="text-[10px] text-gray-400 text-center px-4">
+                      Prefer to recruit your own riders? Create a ride and send the link to your WhatsApp group, hostel, or classmates instead of waiting for a match.
+                    </p>
+                  </div>
+                </ScreenWrapper>
+              )}
+
+              {screen === 'SHARE_RIDE' && activeSharedRide && (
+                <ScreenWrapper screen="SHARE_RIDE" key="share" title="Share Your Ride" onBack={() => setScreen('PLAN_TRIP')}>
+                  <div className="space-y-6">
+                    <Card className="bg-gray-50 border-gray-100">
+                      <div className="space-y-1">
+                        <div className="text-[9px] font-bold text-primary uppercase">Your Ride</div>
+                        <div className="text-sm font-bold text-black">{activeSharedRide.fromLabel} → {activeSharedRide.toLabel}</div>
+                        <div className="text-[11px] text-gray-500">
+                          {activeSharedRide.time} · {activeSharedRide.platform} · {activeSharedRide.seats} seat{activeSharedRide.seats > 1 ? 's' : ''}
+                        </div>
+                      </div>
+                    </Card>
+
+                    <div className="space-y-2">
+                      <label className="text-[9px] uppercase font-bold text-gray-400 ml-1">Shareable Link</label>
+                      <div className="flex gap-2">
+                        <input readOnly value={shareRideLink} className="flex-1 bg-gray-50 border border-gray-200 rounded-xl p-3 text-[11px] text-gray-600 outline-none" />
+                        <button
+                          onClick={() => navigator.clipboard?.writeText(shareRideLink)}
+                          className="px-4 rounded-xl bg-gray-100 text-xs font-bold text-black shrink-0"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+
+                    <Button onClick={shareToWhatsApp} className="!bg-[#25D366]">Share on WhatsApp</Button>
+
+                    <div className="space-y-2">
+                      <div className="text-[9px] uppercase font-bold text-gray-400 ml-1">
+                        Joined ({activeSharedRide.joined.length}/{activeSharedRide.seats})
+                      </div>
+                      {activeSharedRide.joined.length === 0 ? (
+                        <p className="text-xs text-gray-400 ml-1">No one has joined yet — send the link above.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {activeSharedRide.joined.map(j => (
+                            <Card key={j.id} className="bg-white border flex items-center gap-3">
+                              <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center font-bold text-black text-xs">{j.firstName[0]}</div>
+                              <div className="text-xs font-bold text-black">{j.firstName}</div>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {activeSharedRide.joined.length >= activeSharedRide.seats && (
+                      <Button onClick={() => setScreen('MEETING_POINT')}>Ride is full — plan meeting point</Button>
+                    )}
+                  </div>
+                </ScreenWrapper>
+              )}
+
+              {screen === 'JOIN_RIDE' && (
+                <ScreenWrapper screen="JOIN_RIDE" key="join" title="Join This Ride" onBack={() => setScreen('HOME')}>
+                  <div className="space-y-6">
+                    {joinRideError && !joinRideData && (
+                      <p className="text-sm text-red-500 font-bold text-center">{joinRideError}</p>
+                    )}
+                    {joinRideData && (
+                      <>
+                        <Card className="bg-gray-50 border-gray-100">
+                          <div className="space-y-1">
+                            <div className="text-[9px] font-bold text-primary uppercase">{joinRideData.creatorName} is going</div>
+                            <div className="text-sm font-bold text-black">{joinRideData.fromLabel} → {joinRideData.toLabel}</div>
+                            <div className="text-[11px] text-gray-500">
+                              {joinRideData.time} · {joinRideData.platform} · {joinRideData.joined.length}/{joinRideData.seats} seats filled
+                            </div>
+                          </div>
+                        </Card>
+
+                        {hasJoinedRide ? (
+                          <div className="text-center space-y-2">
+                            <Check className="mx-auto text-primary" size={32} />
+                            <p className="text-sm font-bold text-black">You're in! Coordinate pickup with the group.</p>
+                          </div>
+                        ) : (
+                          <>
+                            <Button
+                              disabled={isJoiningRide || joinRideData.joined.length >= joinRideData.seats}
+                              onClick={joinSharedRide}
+                            >
+                              {joinRideData.joined.length >= joinRideData.seats
+                                ? 'Ride Full'
+                                : isJoiningRide ? 'Joining...' : 'Join Ride'}
+                            </Button>
+                            {joinRideError && <p className="text-[10px] text-red-500 font-bold text-center">{joinRideError}</p>}
+                          </>
+                        )}
+                      </>
+                    )}
                   </div>
                 </ScreenWrapper>
               )}
