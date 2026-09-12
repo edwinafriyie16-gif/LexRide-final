@@ -979,6 +979,20 @@ export default function App() {
     setScreen('HOME');
   };
 
+  // Vercel/Express can return an HTML error page instead of JSON when a
+  // route crashes (e.g. missing env var, cold-start error). res.json() on
+  // that throws Safari's generic "string did not match expected pattern"
+  // which hides the real problem, so read as text first and report the
+  // actual status/body if it isn't valid JSON.
+  const parseRideResponse = async (res: Response): Promise<any> => {
+    const raw = await res.text();
+    try {
+      return JSON.parse(raw);
+    } catch {
+      throw new Error(`Server error (${res.status}): ${raw.slice(0, 120) || 'empty response'}`);
+    }
+  };
+
   // On load, check for a ?ride=<id> link and jump straight to the join screen.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -991,8 +1005,9 @@ export default function App() {
     setJoinRideError(null);
     fetch(`/api/rides/${joinRideId}`)
       .then(async r => {
-        if (!r.ok) throw new Error((await r.json()).error || 'Ride not found');
-        return r.json();
+        const data = await parseRideResponse(r);
+        if (!r.ok) throw new Error(data.error || 'Ride not found');
+        return data;
       })
       .then((ride: SharedRide) => {
         setJoinRideData(ride);
@@ -1023,9 +1038,9 @@ export default function App() {
           creatorName: user?.firstName || 'A LexRide user',
         }),
       });
-      if (!res.ok) throw new Error((await res.json()).error || 'Failed to create ride');
-      const ride: SharedRide = await res.json();
-      setActiveSharedRide(ride);
+      const data = await parseRideResponse(res);
+      if (!res.ok) throw new Error(data.error || 'Failed to create ride');
+      setActiveSharedRide(data as SharedRide);
       setScreen('SHARE_RIDE');
     } catch (err: any) {
       setCreateRideError(err.message || 'Something went wrong creating the ride.');
@@ -1038,7 +1053,7 @@ export default function App() {
     if (!activeSharedRide) return;
     try {
       const res = await fetch(`/api/rides/${activeSharedRide.id}`);
-      if (res.ok) setActiveSharedRide(await res.json());
+      if (res.ok) setActiveSharedRide(await parseRideResponse(res));
     } catch { /* silent poll failure */ }
   };
 
@@ -1059,9 +1074,9 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ firstName: user?.firstName || 'A rider' }),
       });
-      if (!res.ok) throw new Error((await res.json()).error || 'Could not join this ride');
-      const ride: SharedRide = await res.json();
-      setJoinRideData(ride);
+      const data = await parseRideResponse(res);
+      if (!res.ok) throw new Error(data.error || 'Could not join this ride');
+      setJoinRideData(data as SharedRide);
       setHasJoinedRide(true);
     } catch (err: any) {
       setJoinRideError(err.message || 'Could not join this ride.');
