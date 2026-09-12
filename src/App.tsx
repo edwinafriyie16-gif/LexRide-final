@@ -714,6 +714,7 @@ export default function App() {
 
   // Shareable ride-link flow
   const [seatsWanted, setSeatsWanted] = useState(3);
+  const [rideClockTime, setRideClockTime] = useState('');
   const [activeSharedRide, setActiveSharedRide] = useState<SharedRide | null>(null);
   const [isCreatingRide, setIsCreatingRide] = useState(false);
   const [createRideError, setCreateRideError] = useState<string | null>(null);
@@ -1019,8 +1020,19 @@ export default function App() {
       });
   }, [joinRideId]);
 
+  // Converts a <input type="time"> value ("08:00") into a friendly
+  // 12-hour label ("8:00 AM") for the ride card and share message.
+  const formatClockTime = (value: string): string => {
+    if (!value) return '';
+    const [hStr, mStr] = value.split(':');
+    let h = parseInt(hStr, 10);
+    const suffix = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${h}:${mStr} ${suffix}`;
+  };
+
   const createShareableRide = async () => {
-    if (!selectedDest || !destZone) return;
+    if (!selectedDest || !destZone || !rideClockTime) return;
     setIsCreatingRide(true);
     setCreateRideError(null);
     try {
@@ -1032,7 +1044,7 @@ export default function App() {
           toLabel: destZone,
           toLat: selectedDest.lat,
           toLng: selectedDest.lng,
-          time: timeWindow,
+          time: formatClockTime(rideClockTime),
           seats: seatsWanted,
           platform,
           creatorName: user?.firstName || 'A LexRide user',
@@ -1091,7 +1103,7 @@ export default function App() {
 
   const shareToWhatsApp = () => {
     if (!activeSharedRide) return;
-    const text = `Going from ${activeSharedRide.fromLabel} to ${activeSharedRide.toLabel} at ${activeSharedRide.time} via ${activeSharedRide.platform}. Join my ride on LexRide and split the fare: ${shareRideLink}`;
+    const text = `Hey! I'm going to ${activeSharedRide.toLabel} at ${activeSharedRide.time} from ${activeSharedRide.fromLabel} — join me and we'll split the ${activeSharedRide.platform} fare 🚗\n\n${shareRideLink}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -1376,6 +1388,17 @@ export default function App() {
                     </div>
                     {selectedDest && (
                       <div className="space-y-2">
+                        <label className="text-[9px] uppercase font-bold text-gray-400 ml-1">Departure time</label>
+                        <input
+                          type="time"
+                          value={rideClockTime}
+                          onChange={(e) => setRideClockTime(e.target.value)}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm font-bold text-black outline-none"
+                        />
+                      </div>
+                    )}
+                    {selectedDest && (
+                      <div className="space-y-2">
                         <label className="text-[9px] uppercase font-bold text-gray-400 ml-1">Seats you want to fill</label>
                         <div className="flex gap-2">
                           {[1, 2, 3, 4].map(n => (
@@ -1392,7 +1415,7 @@ export default function App() {
                     )}
                     <Button disabled={!selectedDest} onClick={startMatching}>Find Split Matches</Button>
                     <Button
-                      disabled={!selectedDest || isCreatingRide}
+                      disabled={!selectedDest || !rideClockTime || isCreatingRide}
                       onClick={createShareableRide}
                       className="!bg-white !text-primary border-2 border-primary"
                     >
