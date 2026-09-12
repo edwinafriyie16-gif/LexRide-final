@@ -1,4 +1,4 @@
-import { getRide } from "../_rideStore";
+import { getRide } from "../_rideStore.js";
 
 export default function handler(req: any, res: any) {
   if (req.method !== "GET") {

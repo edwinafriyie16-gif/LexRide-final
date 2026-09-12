@@ -1,4 +1,4 @@
-import { createRide } from "../_rideStore";
+import { createRide } from "../_rideStore.js";
 
 export default function handler(req: any, res: any) {
   if (req.method !== "POST") {
