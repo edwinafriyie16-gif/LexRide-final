@@ -624,41 +624,29 @@ export default function App() {
     // Move fetchAddr to a stable reference if possible, or just keep it inside but don't depend on state in the setup
     const fetchAddr = async (lat: number, lng: number) => {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); 
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&accept-language=en`,
-          { 
-            headers: { 
-              'User-Agent': 'LexRide/1.0 (lexride.netlify.app; ride-sharing Ghana)',
-              'Accept': 'application/json'
-            },
-            signal: controller.signal
-          }
-        );
+        const res = await fetch(`/api/reverse-geocode?latlng=${lat},${lng}`, { signal: controller.signal });
         clearTimeout(timeoutId);
         if (!res.ok) throw new Error('API Error');
         const data = await res.json();
-        
-        const addr = data.address;
-        const main = addr.amenity || addr.building || addr.highway || addr.shop || addr.road || addr.historic;
-        const area = addr.suburb || addr.neighbourhood || addr.village || addr.city_district || addr.sublocality;
-        const city = addr.city || addr.town || addr.municipality || 'Ghana';
+        if (data.status !== 'OK' || !data.results?.length) throw new Error(data.status || 'No results');
+
+        const components = data.results[0].address_components as { long_name: string; types: string[] }[];
+        const getComp = (type: string) => components.find(c => c.types.includes(type))?.long_name;
+
+        const area = getComp('sublocality_level_1') || getComp('sublocality') || getComp('neighborhood');
+        const route = getComp('route');
+        const city = getComp('locality') || getComp('administrative_area_level_2') || 'Ghana';
 
         let label = '';
-        if (main && area) {
-          label = `${main}, ${area}`;
-        } else if (main) {
-          label = String(main);
-        } else if (area) {
-          label = `${area}, ${city}`;
-        } else {
-          label = String(city);
-        }
+        if (area) label = `${area}, ${city}`;
+        else if (route) label = `${route}, ${city}`;
+        else label = data.results[0].formatted_address || city;
 
-        setGpsAddress(label || 'Current Location');
-        setPickupZone(label || 'Current Location');
+        setGpsAddress(label);
+        setPickupZone(label);
         setHasResolvedAddress(true);
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return;
