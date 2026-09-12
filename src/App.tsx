@@ -1101,10 +1101,20 @@ export default function App() {
     ? `${window.location.origin}${window.location.pathname}?ride=${activeSharedRide.id}`
     : '';
 
+  const shareMessageText = activeSharedRide
+    ? `Join my ${activeSharedRide.platform} and let's split the fare 🚗\nFrom: ${activeSharedRide.fromLabel}\nTo: ${activeSharedRide.toLabel}\nTime: ${activeSharedRide.time}\n\n${shareRideLink}`
+    : '';
+
   const shareToWhatsApp = () => {
     if (!activeSharedRide) return;
-    const text = `Hey! I'm going to ${activeSharedRide.toLabel} at ${activeSharedRide.time} from ${activeSharedRide.fromLabel} — join me and we'll split the ${activeSharedRide.platform} fare 🚗\n\n${shareRideLink}`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    window.open(`https://wa.me/?text=${encodeURIComponent(shareMessageText)}`, '_blank');
+  };
+
+  const [linkCopied, setLinkCopied] = useState(false);
+  const copyShareMessage = () => {
+    navigator.clipboard?.writeText(shareMessageText);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
   };
 
   const startMatching = () => {
@@ -1454,12 +1464,13 @@ export default function App() {
                       <div className="flex gap-2">
                         <input readOnly value={shareRideLink} className="flex-1 bg-gray-50 border border-gray-200 rounded-xl p-3 text-[11px] text-gray-600 outline-none" />
                         <button
-                          onClick={() => navigator.clipboard?.writeText(shareRideLink)}
+                          onClick={copyShareMessage}
                           className="px-4 rounded-xl bg-gray-100 text-xs font-bold text-black shrink-0"
                         >
-                          Copy
+                          {linkCopied ? 'Copied!' : 'Copy'}
                         </button>
                       </div>
+                      <p className="text-[10px] text-gray-400 ml-1">Copies a ready-to-send message with your route, time, and the link.</p>
                     </div>
 
                     <Button onClick={shareToWhatsApp} className="!bg-[#25D366]">Share on WhatsApp</Button>
