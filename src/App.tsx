@@ -212,6 +212,23 @@ const Card = ({ children, className = '', onClick, variant = 'phone' }: { childr
   );
 };
 
+// Faint repeating car-icon pattern for the white page background (visible
+// around the boxed preview on desktop, and briefly on mobile before the
+// phone-frame content paints over it).
+const CarBackdrop = () => {
+  const cars = Array.from({ length: 24 });
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none select-none" aria-hidden="true">
+      <div className="absolute inset-0 grid grid-cols-4 sm:grid-cols-6 gap-10 p-6 opacity-[0.06] rotate-[-8deg] scale-125">
+        {cars.map((_, i) => (
+          <Car key={i} size={64} strokeWidth={1.5} className="text-primary" />
+        ))}
+      </div>
+      <div className="absolute inset-0 bg-gradient-to-b from-white via-white/70 to-white" />
+    </div>
+  );
+};
+
   // Meeting Point Suggestions using real GPS (Finding center of all riders)
 const MeetingPointSuggestions = ({ ridersCoords, userCoords, gpsAddress, selectedMeetingPoint, setSelectedMeetingPoint }: {
   ridersCoords: {lat: number, lng: number}[];
@@ -1132,22 +1149,21 @@ export default function App() {
   };
 
   return (
-    <div className="w-full min-h-screen bg-[#120203] text-white flex items-center justify-center font-sans overflow-hidden relative">
-      <div className="glow-blob top-[-10%] left-[-10%] w-[600px] h-[600px] bg-primary" />
-      <div className="glow-blob bottom-[-10%] right-[-10%] w-[600px] h-[600px] bg-primary" />
+    <div className="w-full h-dvh bg-white text-white flex items-center justify-center font-sans overflow-hidden relative">
+      <CarBackdrop />
 
       <div className="z-10 w-full h-full lg:h-auto lg:max-w-6xl grid grid-cols-12 gap-8 items-center lg:max-h-[800px]">
         {/* PC Sidebar */}
         <div className="hidden lg:flex col-span-3 flex-col gap-6">
           <h1 className="text-5xl font-bold text-primary">LexRide</h1>
           <Card variant="glass">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center font-bold text-xl uppercase">
+            <div className="flex items-center gap-4 text-black">
+              <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center font-bold text-xl uppercase text-white">
                 {user ? `${user.firstName[0]}${user.lastName[0]}` : '??'}
               </div>
               <div>
                 <div className="font-semibold">{user ? `${user.firstName} ${user.lastName}` : 'Guest User'}</div>
-                <div className="text-sm text-gray-400">{user ? `⭐ ${user.rating} • ${user.ridesTaken} Rides` : 'Not signed in'}</div>
+                <div className="text-sm text-gray-500">{user ? `⭐ ${user.rating} • ${user.ridesTaken} Rides` : 'Not signed in'}</div>
               </div>
             </div>
           </Card>

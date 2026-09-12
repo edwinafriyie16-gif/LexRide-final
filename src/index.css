@@ -7,7 +7,7 @@
 
 @layer base {
   body {
-    @apply bg-[#120203] text-white overflow-hidden;
+    @apply bg-white text-white overflow-hidden;
   }
 }
 
