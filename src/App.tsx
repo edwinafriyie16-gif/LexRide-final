@@ -1375,8 +1375,8 @@ export default function App() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <Card onClick={() => setScreen('PLAN_TRIP')} className="bg-white border hover:border-primary transition-all">
-                        <Search className="text-primary mb-2" size={20} />
-                        <span className="font-bold text-sm text-black">Find Ride</span>
+                        <Car className="text-primary mb-2" size={20} />
+                        <span className="font-bold text-sm text-black">Book Ride</span>
                       </Card>
                       <Card onClick={() => setScreen('MY_RIDES')} className="bg-gray-50 border">
                         <History className="text-gray-400 mb-2" size={20} />
@@ -1494,17 +1494,15 @@ export default function App() {
                         </div>
                       </div>
                     )}
-                    <Button disabled={!selectedDest} onClick={startMatching}>Find Split Matches</Button>
                     <Button
                       disabled={!selectedDest || !rideClockTime || isCreatingRide}
                       onClick={createShareableRide}
-                      className="!bg-white !text-primary border-2 border-primary"
                     >
                       {isCreatingRide ? 'Creating link...' : 'Create Ride & Get Share Link'}
                     </Button>
                     {createRideError && <p className="text-[10px] text-red-500 font-bold ml-1">{createRideError}</p>}
                     <p className="text-[10px] text-gray-400 text-center px-4">
-                      Prefer to recruit your own riders? Create a ride and send the link to your WhatsApp group, hostel, or classmates instead of waiting for a match.
+                      Get a shareable link to send to your WhatsApp group, hostel, or classmates so they can join your ride and split the fare.
                     </p>
                   </div>
                 </ScreenWrapper>
