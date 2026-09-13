@@ -9,6 +9,13 @@ interface SharedRideJoiner {
   joinedAt: number;
 }
 
+interface ChatMessage {
+  id: string;
+  sender: string;
+  text: string;
+  createdAt: number;
+}
+
 interface SharedRide {
   id: string;
   fromLabel: string;
@@ -21,6 +28,7 @@ interface SharedRide {
   creatorName: string;
   createdAt: number;
   joined: SharedRideJoiner[];
+  messages: ChatMessage[];
 }
 
 // In-memory store. Fine for a prototype; swap for a real DB (Postgres/Redis)
@@ -58,6 +66,7 @@ async function startServer() {
         creatorName,
         createdAt: Date.now(),
         joined: [],
+        messages: [],
       };
       sharedRides.set(id, ride);
       res.json(ride);
@@ -84,6 +93,19 @@ async function startServer() {
       return res.status(409).json({ error: "Ride is full" });
     }
     ride.joined.push({ id: makeRideId(), firstName, joinedAt: Date.now() });
+    ride.messages.push({ id: makeRideId(), sender: "System", text: `${firstName} joined the ride 🎉`, createdAt: Date.now() });
+    res.json(ride);
+  });
+
+  // Post a chat message to a ride's group chat.
+  app.post("/api/rides/:id/messages", (req, res) => {
+    const ride = sharedRides.get(req.params.id);
+    if (!ride) return res.status(404).json({ error: "Ride not found" });
+    const { sender, text } = req.body || {};
+    if (!sender || !text) return res.status(400).json({ error: "Missing sender or text" });
+    const trimmed = String(text).trim().slice(0, 500);
+    if (!trimmed) return res.status(400).json({ error: "Message is empty" });
+    ride.messages.push({ id: makeRideId(), sender: String(sender).slice(0, 40), text: trimmed, createdAt: Date.now() });
     res.json(ride);
   });
 

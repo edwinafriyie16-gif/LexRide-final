@@ -46,12 +46,19 @@ type AppScreen =
   | 'MATCH_RESULTS' | 'MEETING_POINT' | 'ACTION_SCREEN' | 'GROUP_CHAT' 
   | 'RIDE_TRACKING' | 'MY_RIDES' | 'INBOX' | 'PROFILE' | 'SUPPORT' 
   | 'EDIT_PROFILE' | 'TRUST_SAFETY' | 'NOTIFICATIONS' | 'RATING'
-  | 'SHARE_RIDE' | 'JOIN_RIDE';
+  | 'SHARE_RIDE' | 'JOIN_RIDE' | 'RIDE_CHAT';
 
 interface SharedRideJoiner {
   id: string;
   firstName: string;
   joinedAt: number;
+}
+
+interface RideChatMessage {
+  id: string;
+  sender: string;
+  text: string;
+  createdAt: number;
 }
 
 interface SharedRide {
@@ -66,6 +73,7 @@ interface SharedRide {
   creatorName: string;
   createdAt: number;
   joined: SharedRideJoiner[];
+  messages: RideChatMessage[];
 }
 
 type TimeWindow = 'Now' | '15 min' | '30 min' | '1 hour';
@@ -734,7 +742,14 @@ export default function App() {
   const [joinRideData, setJoinRideData] = useState<SharedRide | null>(null);
   const [joinRideError, setJoinRideError] = useState<string | null>(null);
   const [isJoiningRide, setIsJoiningRide] = useState(false);
-  const [hasJoinedRide, setHasJoinedRide] = useState(false);
+  const [joinerNameInput, setJoinerNameInput] = useState('');
+
+  // Ride group chat (shared by both the creator and anyone who joined via link)
+  const [chatRideId, setChatRideId] = useState<string | null>(null);
+  const [chatRide, setChatRide] = useState<SharedRide | null>(null);
+  const [chatSenderName, setChatSenderName] = useState('');
+  const [chatInput, setChatInput] = useState('');
+  const [isSendingChat, setIsSendingChat] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -1090,22 +1105,66 @@ export default function App() {
 
   const joinSharedRide = async () => {
     if (!joinRideData) return;
+    const name = (user?.firstName || joinerNameInput).trim();
+    if (!name) {
+      setJoinRideError('Enter your name so the group knows who you are.');
+      return;
+    }
     setIsJoiningRide(true);
     setJoinRideError(null);
     try {
       const res = await fetch(`/api/rides/${joinRideData.id}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ firstName: user?.firstName || 'A rider' }),
+        body: JSON.stringify({ firstName: name }),
       });
       const data = await parseRideResponse(res);
       if (!res.ok) throw new Error(data.error || 'Could not join this ride');
       setJoinRideData(data as SharedRide);
-      setHasJoinedRide(true);
+      openRideChat(data.id, name);
     } catch (err: any) {
       setJoinRideError(err.message || 'Could not join this ride.');
     } finally {
       setIsJoiningRide(false);
+    }
+  };
+
+  const openRideChat = (rideId: string, senderName: string) => {
+    setChatRideId(rideId);
+    setChatSenderName(senderName);
+    setScreen('RIDE_CHAT');
+  };
+
+  // Poll the ride (and its messages) while the chat screen is open.
+  useEffect(() => {
+    if (screen !== 'RIDE_CHAT' || !chatRideId) return;
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/rides/${chatRideId}`);
+        if (res.ok) setChatRide(await parseRideResponse(res));
+      } catch { /* silent poll failure */ }
+    };
+    load();
+    const interval = setInterval(load, 3000);
+    return () => clearInterval(interval);
+  }, [screen, chatRideId]);
+
+  const sendChatMessage = async () => {
+    if (!chatRideId || !chatInput.trim()) return;
+    setIsSendingChat(true);
+    try {
+      const res = await fetch(`/api/rides/${chatRideId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sender: chatSenderName || 'Rider', text: chatInput.trim() }),
+      });
+      const data = await parseRideResponse(res);
+      if (res.ok) {
+        setChatRide(data as SharedRide);
+        setChatInput('');
+      }
+    } catch { /* keep input so they can retry */ } finally {
+      setIsSendingChat(false);
     }
   };
 
@@ -1505,6 +1564,13 @@ export default function App() {
                       )}
                     </div>
 
+                    <Button
+                      onClick={() => openRideChat(activeSharedRide.id, user?.firstName || activeSharedRide.creatorName)}
+                      className="!bg-white !text-primary border-2 border-primary"
+                    >
+                      Open Group Chat
+                    </Button>
+
                     {activeSharedRide.joined.length >= activeSharedRide.seats && (
                       <Button onClick={() => setScreen('MEETING_POINT')}>Ride is full — plan meeting point</Button>
                     )}
@@ -1530,26 +1596,87 @@ export default function App() {
                           </div>
                         </Card>
 
-                        {hasJoinedRide ? (
-                          <div className="text-center space-y-2">
-                            <Check className="mx-auto text-primary" size={32} />
-                            <p className="text-sm font-bold text-black">You're in! Coordinate pickup with the group.</p>
+                        {!user && (
+                          <div className="space-y-2">
+                            <label className="text-[9px] uppercase font-bold text-gray-400 ml-1">Your name</label>
+                            <input
+                              value={joinerNameInput}
+                              onChange={(e) => setJoinerNameInput(e.target.value)}
+                              placeholder="So the group knows who you are"
+                              className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm font-bold text-black outline-none"
+                            />
                           </div>
-                        ) : (
-                          <>
-                            <Button
-                              disabled={isJoiningRide || joinRideData.joined.length >= joinRideData.seats}
-                              onClick={joinSharedRide}
-                            >
-                              {joinRideData.joined.length >= joinRideData.seats
-                                ? 'Ride Full'
-                                : isJoiningRide ? 'Joining...' : 'Join Ride'}
-                            </Button>
-                            {joinRideError && <p className="text-[10px] text-red-500 font-bold text-center">{joinRideError}</p>}
-                          </>
                         )}
+
+                        <Button
+                          disabled={isJoiningRide || joinRideData.joined.length >= joinRideData.seats}
+                          onClick={joinSharedRide}
+                        >
+                          {joinRideData.joined.length >= joinRideData.seats
+                            ? 'Ride Full'
+                            : isJoiningRide ? 'Joining...' : 'Join Ride & Open Chat'}
+                        </Button>
+                        {joinRideError && <p className="text-[10px] text-red-500 font-bold text-center">{joinRideError}</p>}
                       </>
                     )}
+                  </div>
+                </ScreenWrapper>
+              )}
+
+              {screen === 'RIDE_CHAT' && chatRide && (
+                <ScreenWrapper screen="RIDE_CHAT" key="ridechat" title="Group Chat" onBack={() => setScreen('HOME')}>
+                  <div className="flex flex-col h-full -mx-6 -mt-6">
+                    <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                      <div className="text-[10px] font-bold text-black truncate">
+                        {chatRide.fromLabel} → {chatRide.toLabel}
+                      </div>
+                      <div className="text-[9px] text-gray-400">
+                        {chatRide.time} · {chatRide.platform} · {chatRide.joined.length + 1} {chatRide.joined.length === 0 ? 'person' : 'people'}
+                      </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                      {chatRide.messages.length === 0 && (
+                        <div className="text-center">
+                          <span className="text-[9px] text-gray-400 bg-gray-100 px-3 py-1 rounded-full font-bold">
+                            Say hello to get things started 👋
+                          </span>
+                        </div>
+                      )}
+                      {chatRide.messages.map((m) => {
+                        const isSystem = m.sender === 'System';
+                        const isMe = m.sender === chatSenderName;
+                        return (
+                          <div key={m.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                            {!isMe && !isSystem && (
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[8px] font-bold text-gray-600">
+                                  {m.sender[0]}
+                                </div>
+                                <span className="text-[9px] text-gray-400 font-bold">{m.sender}</span>
+                              </div>
+                            )}
+                            <div className={`p-3 rounded-2xl text-xs max-w-[80%] ${
+                              isSystem ? 'bg-blue-50 text-blue-600 text-[10px] italic text-center w-full mx-auto' :
+                              isMe ? 'bg-primary text-white rounded-tr-none' :
+                              'bg-gray-100 text-black rounded-tl-none'
+                            }`}>{m.text}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="p-4 bg-white border-t flex gap-2">
+                      <input
+                        className="flex-1 bg-gray-50 p-3 rounded-xl text-xs outline-none"
+                        placeholder="Message..."
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && sendChatMessage()}
+                      />
+                      <button onClick={sendChatMessage} disabled={isSendingChat || !chatInput.trim()} className="p-3 bg-primary text-white rounded-xl disabled:opacity-40">
+                        <Send size={16} />
+                      </button>
+                    </div>
                   </div>
                 </ScreenWrapper>
               )}
