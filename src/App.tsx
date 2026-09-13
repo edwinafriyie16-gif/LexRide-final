@@ -1004,7 +1004,9 @@ export default function App() {
       subscription: 'free',
     };
     setUser(newUser);
-    setScreen('HOME');
+    // If they arrived here from a shared ride link, send them back to
+    // finish joining instead of the normal Home screen.
+    setScreen(joinRideData ? 'JOIN_RIDE' : 'HOME');
   };
 
   // Vercel/Express can return an HTML error page instead of JSON when a
@@ -1039,7 +1041,10 @@ export default function App() {
       })
       .then((ride: SharedRide) => {
         setJoinRideData(ride);
-        setScreen('JOIN_RIDE');
+        // Require an account before letting anyone into the ride's group
+        // chat -- if they're not signed in yet, send them to sign up first;
+        // handleVerifyOTP() picks the join back up once they're done.
+        setScreen(user ? 'JOIN_RIDE' : 'SIGN_UP');
       })
       .catch(err => {
         setJoinRideError(err.message || 'Could not load this ride link.');
@@ -1287,6 +1292,11 @@ export default function App() {
                     <div className="text-center">
                       <Car className="text-primary mx-auto mb-2" size={32} />
                       <h2 className="text-xl font-bold text-black">Sign Up</h2>
+                      {joinRideData && (
+                        <p className="text-xs text-gray-500 mt-2 px-4">
+                          Create an account to join {joinRideData.creatorName}'s ride to {joinRideData.toLabel} and open the group chat.
+                        </p>
+                      )}
                     </div>
                     <form onSubmit={handleSignUp} className="space-y-4">
                       <div className="grid grid-cols-2 gap-3">
@@ -1328,6 +1338,11 @@ export default function App() {
                     <div className="text-center">
                       <ShieldCheck className="text-primary mx-auto mb-4" size={48} />
                       <h2 className="text-xl font-bold text-black">Sign In</h2>
+                      {joinRideData && (
+                        <p className="text-xs text-gray-500 mt-2 px-4">
+                          Sign in to join {joinRideData.creatorName}'s ride to {joinRideData.toLabel}.
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-4">
                         <input type="tel" placeholder="Phone Number" className="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-black" />
