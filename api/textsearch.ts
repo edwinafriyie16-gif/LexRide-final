@@ -30,8 +30,22 @@ function localSearch(query: string) {
 
 export default async function handler(req: any, res: any) {
   const { query, location, radius, region } = req.query;
+  const GEOAPIFY_API_KEY = process.env.GEOAPIFY_API_KEY;
   const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || process.env.GEMINI_API_KEY;
   try {
+    if (GEOAPIFY_API_KEY) {
+      const params = new URLSearchParams({ text: `${String(query || "")}, Ghana`, filter: "countrycode:gh", limit: "8", apiKey: GEOAPIFY_API_KEY });
+      if (location) params.set("bias", `proximity:${String(location).split(",").reverse().join(",")}`);
+      const response = await fetch(`https://api.geoapify.com/v1/geocode/autocomplete?${params.toString()}`);
+      const data = await response.json();
+      const results = (data.features || []).map((feature: any) => ({
+        name: feature.properties.name || feature.properties.formatted || "Location",
+        formatted_address: feature.properties.formatted || feature.properties.address_line1 || "Ghana",
+        geometry: { location: { lat: feature.properties.lat, lng: feature.properties.lon } },
+        source: "Geoapify",
+      }));
+      return res.status(response.ok ? 200 : 502).json({ status: response.ok && results.length ? "OK" : response.ok ? "ZERO_RESULTS" : "GEOAPIFY_ERROR", source: "Geoapify", results, error: response.ok ? undefined : data.message || "Geoapify search failed" });
+    }
     if (!GOOGLE_MAPS_API_KEY) {
       return res.status(200).json({ status: localSearch(String(query || "")).length ? "OK" : "ZERO_RESULTS", source: "LexRide directory", results: localSearch(String(query || "")) });
     }

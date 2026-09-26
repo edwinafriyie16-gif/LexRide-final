@@ -1,7 +1,22 @@
 export default async function handler(req: any, res: any) {
   const { origin, destination } = req.query;
+  const GEOAPIFY_API_KEY = process.env.GEOAPIFY_API_KEY;
   const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || process.env.GEMINI_API_KEY;
   try {
+    if (GEOAPIFY_API_KEY) {
+      const [originLat, originLng] = String(origin || "").split(",").map(Number);
+      const [destinationLat, destinationLng] = String(destination || "").split(",").map(Number);
+      const waypoints = `${originLat},${originLng}|${destinationLat},${destinationLng}`;
+      const response = await fetch(`https://api.geoapify.com/v1/routing?waypoints=${encodeURIComponent(waypoints)}&mode=drive&format=json&apiKey=${encodeURIComponent(GEOAPIFY_API_KEY)}`);
+      const data = await response.json();
+      const route = data.features?.[0];
+      return res.status(response.ok && route ? 200 : 502).json({
+        status: response.ok && route ? "OK" : "GEOAPIFY_ERROR",
+        source: "Geoapify",
+        routes: route ? [{ duration: route.properties.time, distance: route.properties.distance, geometry: route.geometry }] : [],
+        error: response.ok ? undefined : data.message || "Geoapify routing failed",
+      });
+    }
     if (!GOOGLE_MAPS_API_KEY) {
       const [originLat, originLng] = String(origin || "").split(",").map(Number);
       const [destinationLat, destinationLng] = String(destination || "").split(",").map(Number);

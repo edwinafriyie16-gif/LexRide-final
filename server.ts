@@ -52,6 +52,7 @@ function makeRideId(): string {
 async function startServer() {
   const app = express();
   const PORT = 3000;
+  const GEOAPIFY_API_KEY = process.env.GEOAPIFY_API_KEY;
   const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || process.env.GEMINI_API_KEY;
 
   app.use(express.json());
@@ -194,6 +195,13 @@ async function startServer() {
     const { query, location, radius, region } = req.query;
     console.log(`[TextSearch] query: ${query}`);
     try {
+      if (GEOAPIFY_API_KEY) {
+        const params = new URLSearchParams({ text: `${String(query || "")}, Ghana`, filter: "countrycode:gh", limit: "8", apiKey: GEOAPIFY_API_KEY });
+        const response = await fetch(`https://api.geoapify.com/v1/geocode/autocomplete?${params.toString()}`);
+        const data = await response.json();
+        const results = (data.features || []).map((feature: any) => ({ name: feature.properties.name || feature.properties.formatted || "Location", formatted_address: feature.properties.formatted || "Ghana", geometry: { location: { lat: feature.properties.lat, lng: feature.properties.lon } }, source: "Geoapify" }));
+        return res.status(response.ok ? 200 : 502).json({ status: response.ok && results.length ? "OK" : response.ok ? "ZERO_RESULTS" : "GEOAPIFY_ERROR", source: "Geoapify", results });
+      }
       if (!GOOGLE_MAPS_API_KEY) return res.json({ status: localSearch(String(query || "")).length ? "OK" : "ZERO_RESULTS", source: "LexRide directory", results: localSearch(String(query || "")) });
       const url = `https://places.googleapis.com/v1/places:searchText`;
       const body: any = {
@@ -246,6 +254,11 @@ async function startServer() {
     const { origin, destination } = req.query;
     console.log(`[Directions] from: ${origin} to: ${destination}`);
     try {
+      if (GEOAPIFY_API_KEY) {
+        const response = await fetch(`https://api.geoapify.com/v1/routing?waypoints=${encodeURIComponent(String(origin || "") + "|" + String(destination || ""))}&mode=drive&format=json&apiKey=${encodeURIComponent(GEOAPIFY_API_KEY)}`);
+        const data = await response.json(); const route = data.features?.[0];
+        return res.status(response.ok && route ? 200 : 502).json({ status: response.ok && route ? "OK" : "GEOAPIFY_ERROR", source: "Geoapify", routes: route ? [{ duration: route.properties.time, distance: route.properties.distance, geometry: route.geometry }] : [] });
+      }
       if (!GOOGLE_MAPS_API_KEY) return res.json({ status: "ZERO_RESULTS", routes: [] });
       const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${GOOGLE_MAPS_API_KEY}`;
       const response = await fetch(url);

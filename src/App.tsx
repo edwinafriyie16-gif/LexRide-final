@@ -158,7 +158,7 @@ function LocationInput({ label, value, placeholder, onChange, onSelect }: { labe
             {suggestions.map((place) => (
               <button key={`${place.name}-${place.geometry.location.lat}`} type="button" onClick={() => { onSelect(place); setSuggestions([]); }} className="block w-full border-b border-line px-3 py-2.5 text-left last:border-0 hover:bg-[#fff7f2]">
                 <span className="block truncate text-sm font-semibold text-ink">{place.name}</span>
-                <span className="mt-0.5 block truncate text-[11px] font-normal text-slate">{place.formatted_address || "Google Maps location"}</span>
+                <span className="mt-0.5 block truncate text-[11px] font-normal text-slate">{place.formatted_address || "Map location"}</span>
               </button>
             ))}
           </div>
@@ -192,6 +192,7 @@ function decodePolyline(encoded: string): Array<[number, number]> {
 function RouteMap({ from, to, fromLocation, toLocation }: { from: string; to: string; fromLocation?: LocationSuggestion; toLocation?: LocationSuggestion }) {
   const [route, setRoute] = useState<Array<[number, number]>>([]);
   const [routeLoading, setRouteLoading] = useState(false);
+  const [duration, setDuration] = useState<number | null>(null);
 
   useEffect(() => {
     if (!from || !to) return;
@@ -201,8 +202,13 @@ function RouteMap({ from, to, fromLocation, toLocation }: { from: string; to: st
     const destination = toLocation ? `${toLocation.geometry.location.lat},${toLocation.geometry.location.lng}` : to;
     fetch(`/api/directions?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`, { signal: controller.signal })
       .then((response) => response.json())
-      .then((data) => setRoute(data.routes?.[0]?.overview_polyline?.points ? decodePolyline(data.routes[0].overview_polyline.points) : []))
-      .catch(() => setRoute([]))
+      .then((data) => {
+        const currentRoute = data.routes?.[0];
+        setDuration(currentRoute?.duration ?? null);
+        if (currentRoute?.geometry?.coordinates) setRoute(currentRoute.geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng]));
+        else setRoute(currentRoute?.overview_polyline?.points ? decodePolyline(currentRoute.overview_polyline.points) : []);
+      })
+      .catch(() => { setRoute([]); setDuration(null); })
       .finally(() => setRouteLoading(false));
     return () => controller.abort();
   }, [from, to, fromLocation, toLocation]);
@@ -225,7 +231,7 @@ function RouteMap({ from, to, fromLocation, toLocation }: { from: string; to: st
         <div className="route-preview-end" />
         <div className="route-label route-label-start">{from}</div>
         <div className="route-label route-label-end">{to}</div>
-        <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-white/90 px-2.5 py-1.5 text-[10px] font-bold text-ink shadow-sm backdrop-blur">{routeLoading ? "Getting Google Maps route…" : "Google Maps route preview"}</div>
+        <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-white/90 px-2.5 py-1.5 text-[10px] font-bold text-ink shadow-sm backdrop-blur">{routeLoading ? "Calculating route…" : duration ? `Estimated drive time · ${Math.max(1, Math.round(duration / 60))} min` : "Route preview"}</div>
       </div>
     </div>
   );
