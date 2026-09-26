@@ -114,12 +114,18 @@ function RouteLine({ from, to }: { from: string; to: string }) {
   );
 }
 
-function LocationInput({ label, value, placeholder, onChange, onSelect }: { label: string; value: string; placeholder: string; onChange: (value: string) => void; onSelect: (place: LocationSuggestion) => void }) {
+function LocationInput({ label, value, placeholder, onChange, onSelect, locked = false }: { label: string; value: string; placeholder: string; onChange: (value: string) => void; onSelect: (place: LocationSuggestion) => void; locked?: boolean }) {
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (locked) {
+      setSuggestions([]);
+      setError("");
+      setLoading(false);
+      return;
+    }
     const query = value.trim();
     if (query.length < 2) {
       setSuggestions([]);
@@ -146,14 +152,14 @@ function LocationInput({ label, value, placeholder, onChange, onSelect }: { labe
       }
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [value]);
+  }, [value, locked]);
 
   return (
     <label className="field-label relative">
       {label}
       <span className="relative block">
         <MapPin className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-terracotta" />
-        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="field-input !pl-10" autoComplete="off" />
+        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={`field-input !pl-10 ${locked ? "bg-[#f4f1ea]" : ""}`} autoComplete="off" readOnly={locked} />
         {loading && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-medium text-slate">Searching…</span>}
         {suggestions.length > 0 && (
           <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 overflow-hidden rounded-xl border border-line bg-white shadow-xl">
@@ -166,7 +172,7 @@ function LocationInput({ label, value, placeholder, onChange, onSelect }: { labe
           </div>
         )}
       </span>
-      <span className="mt-1 block text-[10px] font-normal text-slate">Search and choose a map result</span>
+      <span className="mt-1 block text-[10px] font-normal text-slate">{locked ? "Detected from your device GPS" : "Search and choose a map result"}</span>
       {error && <span className="mt-1 block text-[10px] font-semibold text-terracotta">{error}</span>}
     </label>
   );
@@ -329,6 +335,7 @@ export default function Home() {
   const [createdTrip, setCreatedTrip] = useState<Trip | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationMessage, setLocationMessage] = useState("");
+  const [currentLocationLocked, setCurrentLocationLocked] = useState(false);
 
   const filteredTrips = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -395,10 +402,12 @@ export default function Home() {
         const place = data.result || fallback;
         setForm((current) => ({ ...current, from: place.name }));
         setSelectedLocations((current) => ({ ...current, from: place }));
+        setCurrentLocationLocked(true);
         setLocationMessage(`Starting point: ${place.formatted_address || place.name}`);
       } catch {
         setForm((current) => ({ ...current, from: fallback.name }));
         setSelectedLocations((current) => ({ ...current, from: fallback }));
+        setCurrentLocationLocked(true);
         setLocationMessage("Starting point set from your device GPS.");
       } finally {
         setLocationLoading(false);
@@ -474,7 +483,7 @@ export default function Home() {
           {!createdTrip ? <>
             <div className="mt-7"><div className="eyebrow">Start a shared trip</div><h1 className="mt-3 font-display text-4xl font-bold tracking-[-0.05em] md:text-6xl">Where are you<br /><span className="text-terracotta">heading?</span></h1><p className="mt-4 max-w-md text-base leading-7 text-slate">Create a trip in under a minute. Share the link, then choose a meeting point together.</p></div>
             <form onSubmit={createTrip} className="form-card mt-8">
-              <div className="grid gap-4 md:grid-cols-2"><div><LocationInput label="From · your current location" value={form.from} onChange={(value) => { setForm({ ...form, from: value }); setSelectedLocations((locations) => ({ ...locations, from: undefined })); }} onSelect={(place) => { setForm({ ...form, from: place.name }); setSelectedLocations((locations) => ({ ...locations, from: place })); }} placeholder={locationLoading ? "Finding your location…" : "Your current location" } /><CurrentLocationButton loading={locationLoading} onClick={useCurrentLocation} />{locationMessage && <p className="mt-2 rounded-lg bg-[#eef7f0] px-3 py-2 text-[10px] font-semibold text-forest">{locationMessage}</p>}<p className="mt-1 text-[10px] text-slate">Your starting point is detected automatically. Tap the field only if you need to change it.</p></div><LocationInput label="Going to" value={form.to} onChange={(value) => { setForm({ ...form, to: value }); setSelectedLocations((locations) => ({ ...locations, to: undefined })); }} onSelect={(place) => { setForm({ ...form, to: place.name }); setSelectedLocations((locations) => ({ ...locations, to: place })); }} placeholder="e.g. KNUST or Kejetia" /></div>
+              <div className="grid gap-4 md:grid-cols-2"><div><LocationInput label="From · your current location" value={form.from} locked={currentLocationLocked} onChange={(value) => { setCurrentLocationLocked(false); setForm({ ...form, from: value }); setSelectedLocations((locations) => ({ ...locations, from: undefined })); }} onSelect={(place) => { setCurrentLocationLocked(false); setForm({ ...form, from: place.name }); setSelectedLocations((locations) => ({ ...locations, from: place })); }} placeholder={locationLoading ? "Finding your location…" : "Your current location" } /><CurrentLocationButton loading={locationLoading} onClick={useCurrentLocation} />{currentLocationLocked && <button type="button" className="mt-2 text-[10px] font-semibold text-terracotta underline" onClick={() => setCurrentLocationLocked(false)}>Change starting point manually</button>}{locationMessage && <p className="mt-2 rounded-lg bg-[#eef7f0] px-3 py-2 text-[10px] font-semibold text-forest">{locationMessage}</p>}<p className="mt-1 text-[10px] text-slate">Your starting point is detected automatically. Tap the field only if you need to change it.</p></div><LocationInput label="Going to" value={form.to} onChange={(value) => { setForm({ ...form, to: value }); setSelectedLocations((locations) => ({ ...locations, to: undefined })); }} onSelect={(place) => { setForm({ ...form, to: place.name }); setSelectedLocations((locations) => ({ ...locations, to: place })); }} placeholder="e.g. KNUST or Kejetia" /></div>
               <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="field-label">Date<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="field-input" /></label><label className="field-label">Departure time<input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} className="field-input" /></label></div>
               <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="field-label">How many seats? <span className="font-normal text-slate">(including you)</span><select value={form.seats} onChange={(e) => setForm({ ...form, seats: e.target.value })} className="field-input"><option value="2">2 seats</option><option value="3">3 seats</option><option value="4">4 seats</option></select></label><label className="field-label">Target contribution <span className="font-normal text-slate">(GHS / person)</span><input type="number" min="0" value={form.contribution} onChange={(e) => setForm({ ...form, contribution: e.target.value })} placeholder="e.g. 35" className="field-input" /></label></div>
               <RouteMap from={form.from} to={form.to} fromLocation={selectedLocations.from} toLocation={selectedLocations.to} />
