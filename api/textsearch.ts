@@ -1,9 +1,39 @@
+const localPlaces = [
+  ["Adum", "Adum, Kumasi, Ashanti Region, Ghana", 6.689568, -1.618825],
+  ["Kumasi", "Kumasi, Ashanti Region, Ghana", 6.700071, -1.630783],
+  ["Ayeduase", "Ayeduase, Kumasi, Ashanti Region, Ghana", 6.675, -1.55944],
+  ["Ayeduase Newsite", "Ayeduase Newsite, Kumasi, Ashanti Region, Ghana", 6.675647, -1.563221],
+  ["Kromuase", "Kromuase, Atwima Kwanwoma, Ashanti Region, Ghana", 6.673, -1.690],
+  ["Kromoase", "Kromoase, Atwima Kwanwoma, Ashanti Region, Ghana", 6.673, -1.690],
+  ["KNUST", "Kwame Nkrumah University of Science and Technology, Kumasi, Ghana", 6.6745, -1.5716],
+  ["Kejetia", "Kejetia, Kumasi, Ashanti Region, Ghana", 6.697, -1.624],
+  ["Bantama", "Bantama, Kumasi, Ashanti Region, Ghana", 6.702, -1.642],
+  ["Suame", "Suame, Kumasi, Ashanti Region, Ghana", 6.716, -1.62],
+  ["Asokwa", "Asokwa, Kumasi, Ashanti Region, Ghana", 6.673, -1.603],
+  ["Ahodwo", "Ahodwo, Kumasi, Ashanti Region, Ghana", 6.686, -1.612],
+  ["Tech Junction", "Tech Junction, Kumasi, Ghana", 6.674, -1.577],
+  ["Ejisu", "Ejisu, Ashanti Region, Ghana", 6.728, -1.478],
+];
+
+function localSearch(query: string) {
+  const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  return localPlaces.filter(([name, address]) => {
+    const haystack = `${name} ${address}`.toLowerCase();
+    return terms.every((term) => haystack.includes(term));
+  }).slice(0, 8).map(([name, formatted_address, lat, lng]) => ({
+    name,
+    formatted_address,
+    geometry: { location: { lat, lng } },
+    source: "LexRide Kumasi directory",
+  }));
+}
+
 export default async function handler(req: any, res: any) {
   const { query, location, radius, region } = req.query;
   const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || process.env.GEMINI_API_KEY;
   try {
     if (!GOOGLE_MAPS_API_KEY) {
-      return res.status(503).json({ status: "CONFIG_ERROR", results: [], error: "Google Maps is not configured. Set GOOGLE_MAPS_API_KEY in the deployment environment." });
+      return res.status(200).json({ status: localSearch(String(query || "")).length ? "OK" : "ZERO_RESULTS", source: "LexRide directory", results: localSearch(String(query || "")) });
     }
     const body: any = {
       textQuery: query,

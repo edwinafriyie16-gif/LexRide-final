@@ -138,7 +138,7 @@ function LocationInput({ label, value, placeholder, onChange, onSelect }: { labe
         setSuggestions((data.results || []).slice(0, 5));
       } catch {
         setSuggestions([]);
-        setError("Could not reach Google Maps. Check your connection and try again.");
+        setError("Could not search locations. Check your connection and try again.");
       } finally {
         setLoading(false);
       }
@@ -164,7 +164,7 @@ function LocationInput({ label, value, placeholder, onChange, onSelect }: { labe
           </div>
         )}
       </span>
-      <span className="mt-1 block text-[10px] font-normal text-slate">Search and choose a Google Maps result</span>
+      <span className="mt-1 block text-[10px] font-normal text-slate">Search and choose a map result</span>
       {error && <span className="mt-1 block text-[10px] font-semibold text-terracotta">{error}</span>}
     </label>
   );
@@ -424,7 +424,7 @@ export default function Home() {
           {!createdTrip ? <>
             <div className="mt-7"><div className="eyebrow">Start a shared trip</div><h1 className="mt-3 font-display text-4xl font-bold tracking-[-0.05em] md:text-6xl">Where are you<br /><span className="text-terracotta">heading?</span></h1><p className="mt-4 max-w-md text-base leading-7 text-slate">Create a trip in under a minute. Share the link, then choose a meeting point together.</p></div>
             <form onSubmit={createTrip} className="form-card mt-8">
-              <div className="grid gap-4 md:grid-cols-2"><LocationInput label="From" value={form.from} onChange={(value) => { setForm({ ...form, from: value }); setSelectedLocations((locations) => ({ ...locations, from: undefined })); }} onSelect={(place) => { setForm({ ...form, from: place.name }); setSelectedLocations((locations) => ({ ...locations, from: place })); }} placeholder="e.g. Legon" /><LocationInput label="Going to" value={form.to} onChange={(value) => { setForm({ ...form, to: value }); setSelectedLocations((locations) => ({ ...locations, to: undefined })); }} onSelect={(place) => { setForm({ ...form, to: place.name }); setSelectedLocations((locations) => ({ ...locations, to: place })); }} placeholder="e.g. Accra Mall" /></div>
+              <div className="grid gap-4 md:grid-cols-2"><LocationInput label="From" value={form.from} onChange={(value) => { setForm({ ...form, from: value }); setSelectedLocations((locations) => ({ ...locations, from: undefined })); }} onSelect={(place) => { setForm({ ...form, from: place.name }); setSelectedLocations((locations) => ({ ...locations, from: place })); }} placeholder="e.g. Adum or Ayeduase" /><LocationInput label="Going to" value={form.to} onChange={(value) => { setForm({ ...form, to: value }); setSelectedLocations((locations) => ({ ...locations, to: undefined })); }} onSelect={(place) => { setForm({ ...form, to: place.name }); setSelectedLocations((locations) => ({ ...locations, to: place })); }} placeholder="e.g. KNUST or Kejetia" /></div>
               <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="field-label">Date<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="field-input" /></label><label className="field-label">Departure time<input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} className="field-input" /></label></div>
               <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="field-label">How many seats? <span className="font-normal text-slate">(including you)</span><select value={form.seats} onChange={(e) => setForm({ ...form, seats: e.target.value })} className="field-input"><option value="2">2 seats</option><option value="3">3 seats</option><option value="4">4 seats</option></select></label><label className="field-label">Target contribution <span className="font-normal text-slate">(GHS / person)</span><input type="number" min="0" value={form.contribution} onChange={(e) => setForm({ ...form, contribution: e.target.value })} placeholder="e.g. 35" className="field-input" /></label></div>
               <RouteMap from={form.from} to={form.to} fromLocation={selectedLocations.from} toLocation={selectedLocations.to} />

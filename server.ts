@@ -34,6 +34,16 @@ interface SharedRide {
 // In-memory store. Fine for a prototype; swap for a real DB (Postgres/Redis)
 // before relying on this across server restarts or multiple instances.
 const sharedRides = new Map<string, SharedRide>();
+const localPlaces = [
+  ["Adum", "Adum, Kumasi, Ashanti Region, Ghana", 6.689568, -1.618825], ["Kumasi", "Kumasi, Ashanti Region, Ghana", 6.700071, -1.630783],
+  ["Ayeduase", "Ayeduase, Kumasi, Ashanti Region, Ghana", 6.675, -1.55944], ["Ayeduase Newsite", "Ayeduase Newsite, Kumasi, Ashanti Region, Ghana", 6.675647, -1.563221],
+  ["Kromuase", "Kromuase, Atwima Kwanwoma, Ashanti Region, Ghana", 6.673, -1.690], ["Kromoase", "Kromoase, Atwima Kwanwoma, Ashanti Region, Ghana", 6.673, -1.690],
+  ["KNUST", "Kwame Nkrumah University of Science and Technology, Kumasi, Ghana", 6.6745, -1.5716], ["Kejetia", "Kejetia, Kumasi, Ashanti Region, Ghana", 6.697, -1.624],
+  ["Bantama", "Bantama, Kumasi, Ashanti Region, Ghana", 6.702, -1.642], ["Suame", "Suame, Kumasi, Ashanti Region, Ghana", 6.716, -1.62],
+  ["Asokwa", "Asokwa, Kumasi, Ashanti Region, Ghana", 6.673, -1.603], ["Ahodwo", "Ahodwo, Kumasi, Ashanti Region, Ghana", 6.686, -1.612],
+  ["Tech Junction", "Tech Junction, Kumasi, Ghana", 6.674, -1.577], ["Ejisu", "Ejisu, Ashanti Region, Ghana", 6.728, -1.478],
+];
+const localSearch = (query: string) => { const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean); return localPlaces.filter(([name, address]) => terms.every((term) => `${name} ${address}`.toLowerCase().includes(term))).slice(0, 8).map(([name, formatted_address, lat, lng]) => ({ name, formatted_address, geometry: { location: { lat, lng } }, source: "LexRide Kumasi directory" })); };
 
 function makeRideId(): string {
   return randomBytes(4).toString("hex");
@@ -184,7 +194,7 @@ async function startServer() {
     const { query, location, radius, region } = req.query;
     console.log(`[TextSearch] query: ${query}`);
     try {
-      if (!GOOGLE_MAPS_API_KEY) throw new Error("Missing API Key");
+      if (!GOOGLE_MAPS_API_KEY) return res.json({ status: localSearch(String(query || "")).length ? "OK" : "ZERO_RESULTS", source: "LexRide directory", results: localSearch(String(query || "")) });
       const url = `https://places.googleapis.com/v1/places:searchText`;
       const body: any = {
         textQuery: query,
@@ -236,7 +246,7 @@ async function startServer() {
     const { origin, destination } = req.query;
     console.log(`[Directions] from: ${origin} to: ${destination}`);
     try {
-      if (!GOOGLE_MAPS_API_KEY) throw new Error("Missing API Key");
+      if (!GOOGLE_MAPS_API_KEY) return res.json({ status: "ZERO_RESULTS", routes: [] });
       const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${GOOGLE_MAPS_API_KEY}`;
       const response = await fetch(url);
       const data = await response.json();
