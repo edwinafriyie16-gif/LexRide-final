@@ -93,6 +93,22 @@ const quickLocations: LocationSuggestion[] = ([
   ["Kejetia", "Kejetia, Kumasi, Ghana", 6.697, -1.624],
   ["Bantama", "Bantama, Kumasi, Ghana", 6.702, -1.642],
   ["Suame", "Suame, Kumasi, Ghana", 6.716, -1.62],
+  ["Accra", "Accra, Greater Accra, Ghana", 5.6037, -0.187],
+  ["Osu", "Osu, Accra, Ghana", 5.556, -0.182],
+  ["Accra Central", "Accra Central, Ghana", 5.552, -0.205],
+  ["Circle", "Kwame Nkrumah Circle, Accra, Ghana", 5.574, -0.216],
+  ["Kaneshie", "Kaneshie, Accra, Ghana", 5.57, -0.25],
+  ["Madina", "Madina, Accra, Ghana", 5.683, -0.168],
+  ["Legon", "Legon, Accra, Ghana", 5.65, -0.187],
+  ["University of Ghana", "University of Ghana, Legon, Accra, Ghana", 5.65, -0.186],
+  ["Accra Mall", "Accra Mall, Tetteh Quarshie, Accra, Ghana", 5.624, -0.17],
+  ["East Legon", "East Legon, Accra, Ghana", 5.635, -0.152],
+  ["Airport City", "Airport City, Accra, Ghana", 5.604, -0.17],
+  ["Kotoka Airport", "Kotoka International Airport, Accra, Ghana", 5.605, -0.167],
+  ["Teshie", "Teshie, Accra, Ghana", 5.583, -0.116],
+  ["Labadi", "Labadi, Accra, Ghana", 5.568, -0.145],
+  ["Spintex", "Spintex Road, Accra, Ghana", 5.625, -0.116],
+  ["Tema", "Tema, Greater Accra, Ghana", 5.6698, 0.0166],
 ] as const).map(([name, formatted_address, lat, lng]) => ({ name, formatted_address, geometry: { location: { lat, lng } }, source: "LexRide quick directory" }));
 const locationCache = new Map<string, LocationSuggestion[]>();
 
