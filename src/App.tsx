@@ -412,8 +412,16 @@ export default function Home() {
   useEffect(() => {
     const tripId = new URLSearchParams(window.location.search).get("trip");
     if (!tripId) return;
-    const trip = trips.find((item) => item.id === tripId);
-    if (trip) join(trip);
+    const localTrip = trips.find((item) => item.id === tripId);
+    if (localTrip) { join(localTrip); return; }
+    let cancelled = false;
+    fetch(`/api/rides/${encodeURIComponent(tripId)}`).then((response) => response.ok ? response.json() : null).then((ride) => {
+      if (cancelled || !ride) return;
+      const sharedTrip: Trip = { id: ride.id, from: ride.fromLabel, to: ride.toLabel, date: ride.date || "Shared trip", time: ride.time, seats: Number(ride.seats) || 3, joined: ride.joined?.length || 1, contribution: 0, meetingPoint: "Choose together", host: ride.creatorName || "Trip creator", status: "Open" };
+      setTrips((items) => items.some((item) => item.id === sharedTrip.id) ? items : [sharedTrip, ...items]);
+      join(sharedTrip);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
   }, []);
 
   const submitJoinRequest = () => {
@@ -437,7 +445,7 @@ export default function Home() {
     setChatDraft("");
   };
 
-  const createTrip = (e: FormEvent) => {
+  const createTrip = async (e: FormEvent) => {
     e.preventDefault();
     if (!form.from || !form.to || !form.date || !form.time) {
       toast.error("Add your route and departure time first");
@@ -447,8 +455,18 @@ export default function Home() {
       toast.error("Choose your current location or select both places from the map suggestions");
       return;
     }
+    let sharedId = `LX-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    try {
+      const response = await fetch("/api/rides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fromLabel: form.from, toLabel: form.to, toLat: selectedLocations.to.geometry.location.lat, toLng: selectedLocations.to.geometry.location.lng, time: form.time, date: form.date, seats: Number(form.seats), platform: "Passenger arranged", creatorName: "You" }) });
+      if (response.ok) {
+        const sharedRide = await response.json();
+        sharedId = sharedRide.id || sharedId;
+      }
+    } catch {
+      // Keep the local prototype usable if the API is temporarily unavailable.
+    }
     const trip: Trip = {
-      id: `LX-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+      id: sharedId,
       from: form.from,
       to: form.to,
       date: new Date(form.date).toLocaleDateString("en-GH", { weekday: "short", day: "2-digit", month: "short" }),
