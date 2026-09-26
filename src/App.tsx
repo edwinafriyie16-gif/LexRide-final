@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent, type Key } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type Key } from "react";
 import {
   ArrowRight,
   CalendarDays,
@@ -31,6 +31,12 @@ type Trip = {
   meetingPoint: string;
   host: string;
   status: "Open" | "Almost full" | "Full";
+};
+
+type LocationSuggestion = {
+  name: string;
+  formatted_address?: string;
+  geometry: { location: { lat: number; lng: number } };
 };
 
 const initialTrips: Trip[] = [
@@ -106,18 +112,110 @@ function RouteLine({ from, to }: { from: string; to: string }) {
   );
 }
 
-function RouteMap({ from, to }: { from: string; to: string }) {
+function LocationInput({ label, value, placeholder, onChange, onSelect }: { label: string; value: string; placeholder: string; onChange: (value: string) => void; onSelect: (place: LocationSuggestion) => void }) {
+  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const query = value.trim();
+    if (query.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      try {
+        const response = await fetch(`/api/textsearch?query=${encodeURIComponent(query)}&region=GH&radius=25000`);
+        const data = await response.json();
+        setSuggestions((data.results || []).slice(0, 5));
+      } catch {
+        setSuggestions([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [value]);
+
+  return (
+    <label className="field-label relative">
+      {label}
+      <span className="relative block">
+        <MapPin className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-terracotta" />
+        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="field-input !pl-10" autoComplete="off" />
+        {loading && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-medium text-slate">Searching…</span>}
+        {suggestions.length > 0 && (
+          <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 overflow-hidden rounded-xl border border-line bg-white shadow-xl">
+            {suggestions.map((place) => (
+              <button key={`${place.name}-${place.geometry.location.lat}`} type="button" onClick={() => { onSelect(place); setSuggestions([]); }} className="block w-full border-b border-line px-3 py-2.5 text-left last:border-0 hover:bg-[#fff7f2]">
+                <span className="block truncate text-sm font-semibold text-ink">{place.name}</span>
+                <span className="mt-0.5 block truncate text-[11px] font-normal text-slate">{place.formatted_address || "Google Maps location"}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </span>
+      <span className="mt-1 block text-[10px] font-normal text-slate">Search and choose a Google Maps result</span>
+    </label>
+  );
+}
+
+function decodePolyline(encoded: string): Array<[number, number]> {
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+  const points: Array<[number, number]> = [];
+  while (index < encoded.length) {
+    let shift = 0;
+    let result = 0;
+    let byte: number;
+    do { byte = encoded.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+    shift = 0; result = 0;
+    do { byte = encoded.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+    points.push([lat / 1e5, lng / 1e5]);
+  }
+  return points;
+}
+
+function RouteMap({ from, to, fromLocation, toLocation }: { from: string; to: string; fromLocation?: LocationSuggestion; toLocation?: LocationSuggestion }) {
+  const [route, setRoute] = useState<Array<[number, number]>>([]);
+  const [routeLoading, setRouteLoading] = useState(false);
+
+  useEffect(() => {
+    if (!from || !to) return;
+    const controller = new AbortController();
+    setRouteLoading(true);
+    const origin = fromLocation ? `${fromLocation.geometry.location.lat},${fromLocation.geometry.location.lng}` : from;
+    const destination = toLocation ? `${toLocation.geometry.location.lat},${toLocation.geometry.location.lng}` : to;
+    fetch(`/api/directions?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`, { signal: controller.signal })
+      .then((response) => response.json())
+      .then((data) => setRoute(data.routes?.[0]?.overview_polyline?.points ? decodePolyline(data.routes[0].overview_polyline.points) : []))
+      .catch(() => setRoute([]))
+      .finally(() => setRouteLoading(false));
+    return () => controller.abort();
+  }, [from, to, fromLocation, toLocation]);
+
+  const path = useMemo(() => {
+    if (route.length < 2) return "";
+    const lats = route.map(([lat]) => lat); const lngs = route.map(([, lng]) => lng);
+    const minLat = Math.min(...lats); const maxLat = Math.max(...lats); const minLng = Math.min(...lngs); const maxLng = Math.max(...lngs);
+    const width = Math.max(maxLng - minLng, 0.001); const height = Math.max(maxLat - minLat, 0.001);
+    return route.map(([lat, lng]) => `${12 + ((lng - minLng) / width) * 76},${88 - ((lat - minLat) / height) * 70}`).join(" ");
+  }, [route]);
+
   if (!from || !to) return null;
   return (
     <div className="mt-5 overflow-hidden rounded-2xl border border-line bg-[#dfe9da]">
       <div className="relative h-[220px]">
         <div className="absolute inset-0 route-preview-grid" />
-        <div className="route-preview-line" />
+        {path ? <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full"><polyline points={path} fill="none" stroke="#b95638" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg> : <div className="route-preview-line" />}
         <div className="route-preview-start" />
         <div className="route-preview-end" />
         <div className="route-label route-label-start">{from}</div>
         <div className="route-label route-label-end">{to}</div>
-        <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-white/90 px-2.5 py-1.5 text-[10px] font-bold text-ink shadow-sm backdrop-blur">Route preview</div>
+        <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-white/90 px-2.5 py-1.5 text-[10px] font-bold text-ink shadow-sm backdrop-blur">{routeLoading ? "Getting Google Maps route…" : "Google Maps route preview"}</div>
       </div>
     </div>
   );
@@ -205,6 +303,7 @@ export default function Home() {
   const [joinTrip, setJoinTrip] = useState<Trip | null>(null);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState({ from: "", to: "", date: "", time: "", seats: "3", contribution: "" });
+  const [selectedLocations, setSelectedLocations] = useState<{ from?: LocationSuggestion; to?: LocationSuggestion }>({});
   const [createdTrip, setCreatedTrip] = useState<Trip | null>(null);
 
   const filteredTrips = useMemo(() => {
@@ -232,6 +331,10 @@ export default function Home() {
     e.preventDefault();
     if (!form.from || !form.to || !form.date || !form.time) {
       toast.error("Add your route and departure time first");
+      return;
+    }
+    if (!selectedLocations.from || !selectedLocations.to) {
+      toast.error("Choose both locations from the Google Maps suggestions");
       return;
     }
     const trip: Trip = {
@@ -311,11 +414,10 @@ export default function Home() {
           {!createdTrip ? <>
             <div className="mt-7"><div className="eyebrow">Start a shared trip</div><h1 className="mt-3 font-display text-4xl font-bold tracking-[-0.05em] md:text-6xl">Where are you<br /><span className="text-terracotta">heading?</span></h1><p className="mt-4 max-w-md text-base leading-7 text-slate">Create a trip in under a minute. Share the link, then choose a meeting point together.</p></div>
             <form onSubmit={createTrip} className="form-card mt-8">
-              <div className="grid gap-4 md:grid-cols-2"><label className="field-label">From<input list="places" value={form.from} onChange={(e) => setForm({ ...form, from: e.target.value })} placeholder="e.g. Legon" className="field-input" /></label><label className="field-label">Going to<input list="places" value={form.to} onChange={(e) => setForm({ ...form, to: e.target.value })} placeholder="e.g. Accra Mall" className="field-input" /></label></div>
-              <datalist id="places">{places.map((place) => <option key={place} value={place} />)}</datalist>
+              <div className="grid gap-4 md:grid-cols-2"><LocationInput label="From" value={form.from} onChange={(value) => { setForm({ ...form, from: value }); setSelectedLocations((locations) => ({ ...locations, from: undefined })); }} onSelect={(place) => { setForm({ ...form, from: place.name }); setSelectedLocations((locations) => ({ ...locations, from: place })); }} placeholder="e.g. Legon" /><LocationInput label="Going to" value={form.to} onChange={(value) => { setForm({ ...form, to: value }); setSelectedLocations((locations) => ({ ...locations, to: undefined })); }} onSelect={(place) => { setForm({ ...form, to: place.name }); setSelectedLocations((locations) => ({ ...locations, to: place })); }} placeholder="e.g. Accra Mall" /></div>
               <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="field-label">Date<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="field-input" /></label><label className="field-label">Departure time<input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} className="field-input" /></label></div>
               <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="field-label">How many seats? <span className="font-normal text-slate">(including you)</span><select value={form.seats} onChange={(e) => setForm({ ...form, seats: e.target.value })} className="field-input"><option value="2">2 seats</option><option value="3">3 seats</option><option value="4">4 seats</option></select></label><label className="field-label">Target contribution <span className="font-normal text-slate">(GHS / person)</span><input type="number" min="0" value={form.contribution} onChange={(e) => setForm({ ...form, contribution: e.target.value })} placeholder="e.g. 35" className="field-input" /></label></div>
-              <RouteMap from={form.from} to={form.to} />
+              <RouteMap from={form.from} to={form.to} fromLocation={selectedLocations.from} toLocation={selectedLocations.to} />
               <div className="mt-6 rounded-2xl bg-sand p-4 text-sm text-slate"><div className="flex items-center gap-2 font-semibold text-ink"><MessageCircle className="h-4 w-4 text-terracotta" /> You’ll get a shareable trip link</div><p className="mt-1 pl-6 text-xs leading-5">Share it on WhatsApp, Instagram or anywhere else. The official group stays inside LexRide.</p></div>
               <button type="submit" className="button-primary mt-6 w-full">Create my trip <ArrowRight className="ml-2 h-4 w-4" /></button>
             </form>
