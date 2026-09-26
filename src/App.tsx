@@ -132,11 +132,12 @@ function LocationInput({ label, value, placeholder, onChange, onSelect, locked =
       setError("");
       return;
     }
+    const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setLoading(true);
       setError("");
       try {
-        const response = await fetch(`/api/textsearch?query=${encodeURIComponent(query)}&region=GH&radius=25000`);
+        const response = await fetch(`/api/textsearch?query=${encodeURIComponent(query)}&region=GH&radius=25000`, { signal: controller.signal });
         const data = await response.json();
         if (!response.ok || data.status === "CONFIG_ERROR" || data.status === "GOOGLE_ERROR") {
           setSuggestions([]);
@@ -145,13 +146,17 @@ function LocationInput({ label, value, placeholder, onChange, onSelect, locked =
         }
         setSuggestions((data.results || []).slice(0, 5));
       } catch {
+        if (controller.signal.aborted) return;
         setSuggestions([]);
         setError("Could not search locations. Check your connection and try again.");
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }, 350);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [value, locked]);
 
   return (
