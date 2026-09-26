@@ -115,21 +115,30 @@ function RouteLine({ from, to }: { from: string; to: string }) {
 function LocationInput({ label, value, placeholder, onChange, onSelect }: { label: string; value: string; placeholder: string; onChange: (value: string) => void; onSelect: (place: LocationSuggestion) => void }) {
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const query = value.trim();
     if (query.length < 2) {
       setSuggestions([]);
+      setError("");
       return;
     }
     const timer = window.setTimeout(async () => {
       setLoading(true);
+      setError("");
       try {
         const response = await fetch(`/api/textsearch?query=${encodeURIComponent(query)}&region=GH&radius=25000`);
         const data = await response.json();
+        if (!response.ok || data.status === "CONFIG_ERROR" || data.status === "GOOGLE_ERROR") {
+          setSuggestions([]);
+          setError(data.error || "Google Maps search is unavailable right now");
+          return;
+        }
         setSuggestions((data.results || []).slice(0, 5));
       } catch {
         setSuggestions([]);
+        setError("Could not reach Google Maps. Check your connection and try again.");
       } finally {
         setLoading(false);
       }
@@ -156,6 +165,7 @@ function LocationInput({ label, value, placeholder, onChange, onSelect }: { labe
         )}
       </span>
       <span className="mt-1 block text-[10px] font-normal text-slate">Search and choose a Google Maps result</span>
+      {error && <span className="mt-1 block text-[10px] font-semibold text-terracotta">{error}</span>}
     </label>
   );
 }

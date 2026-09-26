@@ -42,7 +42,7 @@ function makeRideId(): string {
 async function startServer() {
   const app = express();
   const PORT = 3000;
-  const GOOGLE_MAPS_API_KEY = process.env.GEMINI_API_KEY;
+  const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || process.env.GEMINI_API_KEY;
 
   app.use(express.json());
 

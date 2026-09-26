@@ -1,8 +1,10 @@
 export default async function handler(req: any, res: any) {
   const { query, location, radius, region } = req.query;
-  const GOOGLE_MAPS_API_KEY = process.env.GEMINI_API_KEY;
+  const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || process.env.GEMINI_API_KEY;
   try {
-    if (!GOOGLE_MAPS_API_KEY) throw new Error("Missing API Key");
+    if (!GOOGLE_MAPS_API_KEY) {
+      return res.status(503).json({ status: "CONFIG_ERROR", results: [], error: "Google Maps is not configured. Set GOOGLE_MAPS_API_KEY in the deployment environment." });
+    }
     const body: any = {
       textQuery: query,
       regionCode: region || "GH",
@@ -35,9 +37,10 @@ export default async function handler(req: any, res: any) {
       formatted_address: p.formattedAddress || p.shortFormattedAddress || "",
       geometry: { location: { lat: p.location.latitude, lng: p.location.longitude } },
     }));
-    res.status(200).json({
-      status: response.ok && results.length > 0 ? "OK" : "ZERO_RESULTS",
+    res.status(response.ok ? 200 : 502).json({
+      status: response.ok && results.length > 0 ? "OK" : response.ok ? "ZERO_RESULTS" : "GOOGLE_ERROR",
       results,
+      error: response.ok ? undefined : data.error?.message || "Google Places search failed",
     });
   } catch (error) {
     console.error("[TextSearch] Error:", error);
