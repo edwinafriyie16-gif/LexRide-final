@@ -12,6 +12,7 @@ import {
   Navigation,
   Plus,
   Search,
+  Send,
   Share2,
   ShieldCheck,
   Sparkles,
@@ -33,6 +34,9 @@ type Trip = {
   host: string;
   status: "Open" | "Almost full" | "Full";
 };
+
+type GuestRequest = { id: string; name: string; sex: "Male" | "Female"; status: "Waiting" | "Approved" | "Declined" };
+type ChatMessage = { id: string; sender: string; text: string; mine?: boolean };
 
 type LocationSuggestion = {
   name: string;
@@ -371,6 +375,12 @@ export default function Home() {
   const [trips, setTrips] = useState<Trip[]>(initialTrips);
   const [showSheet, setShowSheet] = useState<Trip | null>(null);
   const [joinTrip, setJoinTrip] = useState<Trip | null>(null);
+  const [joinStage, setJoinStage] = useState<"form" | "waiting" | "room">("form");
+  const [guestName, setGuestName] = useState("");
+  const [guestSex, setGuestSex] = useState<"Male" | "Female" | "">("");
+  const [guestRequests, setGuestRequests] = useState<GuestRequest[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([{ id: "welcome", sender: "LexRide", text: "Welcome to the trip room. Agree on a public meeting point here." }]);
+  const [chatDraft, setChatDraft] = useState("");
   const [search, setSearch] = useState("");
   const [form, setForm] = useState({ from: "", to: "", date: "", time: "", seats: "3", contribution: "" });
   const [selectedLocations, setSelectedLocations] = useState<{ from?: LocationSuggestion; to?: LocationSuggestion }>({});
@@ -386,18 +396,45 @@ export default function Home() {
   }, [search, trips]);
 
   const shareTrip = (trip: Trip) => {
-    const text = `Join my LexRide trip: ${trip.from} → ${trip.to}, ${trip.date} at ${trip.time}. ${trip.seats - trip.joined} seat(s) left. Join here: lexride.app/trip/${trip.id}`;
+    const joinLink = `${window.location.origin}/?trip=${encodeURIComponent(trip.id)}`;
+    const text = `Join my LexRide trip: ${trip.from} → ${trip.to}, ${trip.date} at ${trip.time}. ${trip.seats - trip.joined} seat(s) left. Join here: ${joinLink}`;
     navigator.clipboard?.writeText(text);
     toast.success("Trip message copied", { description: "Paste it into WhatsApp to invite people." });
   };
 
-  const join = (trip: Trip) => setJoinTrip(trip);
+  const join = (trip: Trip) => {
+    setJoinTrip(trip);
+    setJoinStage("form");
+    setGuestName("");
+    setGuestSex("");
+  };
 
-  const confirmJoin = () => {
-    if (!joinTrip) return;
-    setTrips((items) => items.map((item) => item.id === joinTrip.id ? { ...item, joined: Math.min(item.seats, item.joined + 1), status: item.joined + 1 >= item.seats ? "Full" : "Almost full" } : item));
-    setJoinTrip(null);
-    toast.success("You joined the trip", { description: "The group can now agree the meeting point." });
+  useEffect(() => {
+    const tripId = new URLSearchParams(window.location.search).get("trip");
+    if (!tripId) return;
+    const trip = trips.find((item) => item.id === tripId);
+    if (trip) join(trip);
+  }, []);
+
+  const submitJoinRequest = () => {
+    if (!joinTrip || !guestName.trim() || !guestSex) { toast.error("Enter your name and confirm Male or Female first"); return; }
+    setGuestRequests((items) => [...items, { id: `guest-${Date.now()}`, name: guestName.trim(), sex: guestSex, status: "Waiting" }]);
+    setJoinStage("waiting");
+  };
+
+  const approveGuest = (request: GuestRequest) => {
+    setGuestRequests((items) => items.map((item) => item.id === request.id ? { ...item, status: "Approved" } : item));
+    setTrips((items) => items.map((item) => item.id === createdTrip?.id ? { ...item, joined: Math.min(item.seats, item.joined + 1), status: item.joined + 1 >= item.seats ? "Full" : "Almost full" } : item));
+    setJoinStage("room");
+  };
+
+  const declineGuest = (request: GuestRequest) => setGuestRequests((items) => items.map((item) => item.id === request.id ? { ...item, status: "Declined" } : item));
+
+  const sendChatMessage = () => {
+    const text = chatDraft.trim();
+    if (!text) return;
+    setChatMessages((items) => [...items, { id: `message-${Date.now()}`, sender: "You", text, mine: true }]);
+    setChatDraft("");
   };
 
   const createTrip = (e: FormEvent) => {
@@ -532,7 +569,7 @@ export default function Home() {
               <div className="mt-6 rounded-2xl bg-sand p-4 text-sm text-slate"><div className="flex items-center gap-2 font-semibold text-ink"><MessageCircle className="h-4 w-4 text-terracotta" /> You’ll get a shareable trip link</div><p className="mt-1 pl-6 text-xs leading-5">Share it on WhatsApp, Instagram or anywhere else. The official group stays inside LexRide.</p></div>
               <button type="submit" className="button-primary mt-6 w-full">Create my trip <ArrowRight className="ml-2 h-4 w-4" /></button>
             </form>
-          </> : <div className="success-card mt-8"><div className="success-badge"><Check className="h-6 w-6" /></div><div className="eyebrow mt-5">Your trip is live</div><h1 className="mt-2 font-display text-4xl font-bold tracking-[-0.05em]">Share it with<br /><span className="text-terracotta">your people.</span></h1><div className="mt-6 rounded-2xl bg-sand p-4"><RouteLine from={createdTrip.from} to={createdTrip.to} /><div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate"><span>{createdTrip.date}</span><span>{createdTrip.time}</span><span>{createdTrip.seats} seats</span></div></div><div className="mt-5 flex items-center gap-2 rounded-xl border border-line bg-white px-3 py-3 text-sm"><span className="min-w-0 flex-1 truncate font-medium text-slate">lexride.app/trip/{createdTrip.id}</span><button className="icon-button !h-8 !w-8" onClick={() => { navigator.clipboard?.writeText(`https://lexride.app/trip/${createdTrip.id}`); toast.success("Link copied"); }}><Copy className="h-4 w-4" /></button></div><div className="mt-5 rounded-2xl border border-line bg-white p-4"><div className="flex items-center justify-between"><div><div className="eyebrow">Your in-app trip room</div><div className="mt-1 font-display text-lg font-bold text-ink">Keep the details here</div></div><span className="status-pill status-green">Live</span></div><div className="mt-3 flex items-center gap-2 text-xs text-slate"><div className="avatar">Y</div><span>You started this trip</span><span>·</span><span>{createdTrip.seats - 1} seats open</span></div><p className="mt-3 text-xs leading-5 text-slate">Share the invite anywhere. People join this room, see the route and vote on a meeting point—no temporary WhatsApp group required.</p></div><RouteMap from={createdTrip.from} to={createdTrip.to} /><button className="button-primary mt-4 w-full" onClick={() => shareTrip(createdTrip)}><Share2 className="mr-2 h-4 w-4" /> Copy WhatsApp invite</button><button className="button-soft mt-3 w-full" onClick={() => { setShowSheet(createdTrip); }}>Choose meeting point</button><button className="back-link mx-auto mt-6" onClick={() => setView("trips")}>View my trip</button></div>}
+          </> : <div className="success-card mt-8"><div className="success-badge"><Check className="h-6 w-6" /></div><div className="eyebrow mt-5">Your trip is live</div><h1 className="mt-2 font-display text-4xl font-bold tracking-[-0.05em]">Share it with<br /><span className="text-terracotta">your people.</span></h1><div className="mt-6 rounded-2xl bg-sand p-4"><RouteLine from={createdTrip.from} to={createdTrip.to} /><div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate"><span>{createdTrip.date}</span><span>{createdTrip.time}</span><span>{createdTrip.seats} seats</span></div></div><div className="mt-5 flex items-center gap-2 rounded-xl border border-line bg-white px-3 py-3 text-sm"><span className="min-w-0 flex-1 truncate font-medium text-slate">{window.location.origin}/?trip={createdTrip.id}</span><button className="icon-button !h-8 !w-8" onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/?trip=${createdTrip.id}`); toast.success("Waiting-room link copied"); }}><Copy className="h-4 w-4" /></button></div><div className="mt-5 rounded-2xl border border-line bg-white p-4"><div className="flex items-center justify-between"><div><div className="eyebrow">Your in-app trip room</div><div className="mt-1 font-display text-lg font-bold text-ink">Keep the details here</div></div><span className="status-pill status-green">Live</span></div><div className="mt-3 flex items-center gap-2 text-xs text-slate"><div className="avatar">Y</div><span>You started this trip</span><span>·</span><span>{createdTrip.seats - 1} seats open</span></div><p className="mt-3 text-xs leading-5 text-slate">Share the invite anywhere. People join this room, see the route and vote on a meeting point—no temporary WhatsApp group required.</p></div><RouteMap from={createdTrip.from} to={createdTrip.to} /><button className="button-primary mt-4 w-full" onClick={() => shareTrip(createdTrip)}><Share2 className="mr-2 h-4 w-4" /> Copy WhatsApp invite</button><div className="mt-5 rounded-2xl border border-line bg-white p-4"><div className="flex items-center justify-between"><div><div className="eyebrow">Waiting room</div><div className="mt-1 font-display text-lg font-bold text-ink">Approve passengers</div></div><span className="status-pill status-warm">{guestRequests.filter((request) => request.status === "Waiting").length} waiting</span></div>{guestRequests.filter((request) => request.status === "Waiting").length === 0 ? <p className="mt-3 text-xs leading-5 text-slate">Passengers who open your link will appear here with their name and sex. Approve them before they enter the trip chat.</p> : <div className="mt-3 space-y-2">{guestRequests.filter((request) => request.status === "Waiting").map((request) => <div key={request.id} className="flex items-center gap-3 rounded-xl bg-sand p-3"><div className="avatar">{request.name.slice(0, 1).toUpperCase()}</div><div className="min-w-0 flex-1"><div className="text-sm font-semibold text-ink">{request.name}</div><div className="text-xs text-slate">{request.sex}</div></div><button className="button-primary !px-3 !py-2 text-xs" onClick={() => approveGuest(request)}>Accept</button><button className="button-soft !px-3 !py-2 text-xs" onClick={() => declineGuest(request)}>Decline</button></div>)}</div>}</div><div className="mt-5 rounded-2xl border border-line bg-white p-4"><div className="eyebrow">In-app group chat</div><div className="mt-1 font-display text-lg font-bold text-ink">Coordinate here</div><div className="mt-3 max-h-48 space-y-2 overflow-y-auto rounded-xl bg-sand p-3">{chatMessages.map((message) => <div key={message.id} className={`flex ${message.mine ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${message.mine ? "bg-ink text-white" : "bg-white text-ink"}`}><div className="mb-0.5 text-[10px] font-bold opacity-60">{message.sender}</div>{message.text}</div></div>)}</div><div className="mt-3 flex gap-2"><input value={chatDraft} onChange={(e) => setChatDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") sendChatMessage(); }} className="field-input" placeholder="Message the trip group…" /><button type="button" onClick={sendChatMessage} className="button-primary !px-3"><Send className="h-4 w-4" /></button></div></div><button className="button-soft mt-3 w-full" onClick={() => { setShowSheet(createdTrip); }}>Choose meeting point</button><button className="back-link mx-auto mt-6" onClick={() => setView("trips")}>View my trip</button></div>}
         </section>}
 
         {view === "trips" && <section className="py-4 md:py-10"><div className="eyebrow">Your trip board</div><h1 className="mt-3 font-display text-4xl font-bold tracking-[-0.05em] md:text-6xl">Trips you’ve<br /><span className="text-terracotta">started.</span></h1><p className="mt-4 max-w-md text-base leading-7 text-slate">Your created trips and the ones you’ve joined will live here in the full version.</p><div className="mt-8 grid max-w-3xl gap-4">{trips.filter((trip) => trip.host === "You").map((trip) => <div key={trip.id} className="trip-card"><div className="flex items-center justify-between"><RouteLine from={trip.from} to={trip.to} /><span className="status-pill status-green">{trip.joined}/{trip.seats} joined</span></div><div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate"><span>{trip.date} · {trip.time}</span><button className="button-soft !px-3 !py-2 text-xs" onClick={() => setShowSheet(trip)}><MapPin className="mr-1.5 h-3.5 w-3.5" /> {trip.meetingPoint}</button></div></div>)}{trips.filter((trip) => trip.host === "You").length === 0 && <div className="empty-state"><h3 className="font-display text-xl font-bold">No trips started yet</h3><button className="button-primary mt-4" onClick={() => setView("create")}>Create a trip</button></div>}</div></section>}
@@ -541,7 +578,7 @@ export default function Home() {
       <footer className="mx-auto flex max-w-6xl flex-col gap-3 border-t border-line px-5 py-7 text-xs text-slate sm:flex-row sm:items-center sm:justify-between lg:px-8"><div className="flex items-center gap-2"><div className="brand-mark brand-mark-small"><span>L</span></div><span className="font-semibold text-ink">LexRide</span><span>·</span><span>V1 passenger prototype</span></div><span>Built for simpler journeys across Ghana</span></footer>
 
       {showSheet && <MeetingPointSheet trip={showSheet} onClose={() => setShowSheet(null)} onConfirm={confirmMeetingPoint} />}
-      {joinTrip && <div className="sheet-backdrop" onMouseDown={() => setJoinTrip(null)}><div className="sheet-panel" onMouseDown={(e) => e.stopPropagation()}><div className="flex items-start justify-between"><div><div className="eyebrow">Join trip</div><h3 className="mt-1 font-display text-2xl font-bold text-ink">You’re going this way?</h3></div><button className="icon-button" onClick={() => setJoinTrip(null)} aria-label="Close"><X className="h-4 w-4" /></button></div><div className="mt-5 rounded-2xl bg-sand p-4"><RouteLine from={joinTrip.from} to={joinTrip.to} /><div className="mt-3 text-sm text-slate">{joinTrip.date} · {joinTrip.time}</div><div className="mt-1 font-display text-xl font-bold text-ink">About GHS {joinTrip.contribution} / person</div></div><label className="field-label mt-5">Your name<input className="field-input" placeholder="e.g. Yaw Mensah" /></label><div className="mt-4 flex items-start gap-3 rounded-xl bg-[#e6f0ea] p-3 text-xs leading-5 text-slate"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-forest" /><span>LexRide groups are for coordinating passengers. Meet in public and confirm the transport before setting off.</span></div><button className="button-primary mt-5 w-full" onClick={confirmJoin}>Join this trip <Check className="ml-2 h-4 w-4" /></button></div></div>}
+      {joinTrip && <div className="sheet-backdrop" onMouseDown={() => setJoinTrip(null)}><div className="sheet-panel" onMouseDown={(e) => e.stopPropagation()}><div className="flex items-start justify-between"><div><div className="eyebrow">{joinStage === "form" ? "Waiting room" : joinStage === "waiting" ? "Request sent" : "Trip room"}</div><h3 className="mt-1 font-display text-2xl font-bold text-ink">{joinStage === "form" ? "Request to join" : joinStage === "waiting" ? "Waiting for approval" : "You’re approved"}</h3></div><button className="icon-button" onClick={() => setJoinTrip(null)} aria-label="Close"><X className="h-4 w-4" /></button></div><div className="mt-5 rounded-2xl bg-sand p-4"><RouteLine from={joinTrip.from} to={joinTrip.to} /><div className="mt-3 text-sm text-slate">{joinTrip.date} · {joinTrip.time}</div><div className="mt-1 font-display text-xl font-bold text-ink">About GHS {joinTrip.contribution} / person</div></div>{joinStage === "form" && <><p className="mt-5 text-sm leading-6 text-slate">Enter your details. The person who created this trip must approve you before you can see the group chat.</p><label className="field-label mt-4">Your name<input value={guestName} onChange={(e) => setGuestName(e.target.value)} className="field-input" placeholder="e.g. Yaw Mensah" /></label><fieldset className="mt-4"><legend className="field-label">Confirm your sex</legend><div className="mt-2 grid grid-cols-2 gap-3"><button type="button" onClick={() => setGuestSex("Male")} className={`button-soft justify-center ${guestSex === "Male" ? "!border-terracotta !bg-[#fff1eb]" : ""}`}>Male</button><button type="button" onClick={() => setGuestSex("Female")} className={`button-soft justify-center ${guestSex === "Female" ? "!border-terracotta !bg-[#fff1eb]" : ""}`}>Female</button></div></fieldset><div className="mt-4 flex items-start gap-3 rounded-xl bg-[#e6f0ea] p-3 text-xs leading-5 text-slate"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-forest" /><span>Your details are shown to the trip creator for approval. Meet in public.</span></div><button className="button-primary mt-5 w-full" onClick={submitJoinRequest}>Send join request <ArrowRight className="ml-2 h-4 w-4" /></button></>}{joinStage === "waiting" && <div className="mt-6 rounded-2xl border border-line bg-white p-5 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#fff1eb] text-terracotta"><Clock3 className="h-6 w-6" /></div><h4 className="mt-4 font-display text-xl font-bold text-ink">You’re in the waiting room</h4><p className="mt-2 text-sm leading-6 text-slate">Your name and sex were sent to the trip creator. The chat opens after they accept you.</p><span className="status-pill status-warm mt-4">Waiting for approval</span></div>}{joinStage === "room" && <div className="mt-5"><div className="rounded-xl bg-[#e6f0ea] p-3 text-sm text-slate"><strong className="text-ink">You’re approved.</strong> You can now coordinate with the group.</div><div className="mt-4 max-h-48 space-y-2 overflow-y-auto rounded-2xl border border-line bg-white p-3">{chatMessages.map((message) => <div key={message.id} className={`flex ${message.mine ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${message.mine ? "bg-ink text-white" : "bg-sand text-ink"}`}><div className="mb-0.5 text-[10px] font-bold opacity-60">{message.sender}</div>{message.text}</div></div>)}</div><div className="mt-3 flex gap-2"><input value={chatDraft} onChange={(e) => setChatDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") sendChatMessage(); }} className="field-input" placeholder="Write to the trip group…" /><button type="button" onClick={sendChatMessage} className="button-primary !px-3"><Send className="h-4 w-4" /></button></div></div>}</div></div>}
     </div>
   );
 }
