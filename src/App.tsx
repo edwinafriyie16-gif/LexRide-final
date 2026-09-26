@@ -1178,7 +1178,7 @@ export default function App() {
     : '';
 
   const shareMessageText = activeSharedRide
-    ? `Join my ${activeSharedRide.platform} and let's split the fare 🚗\nFrom: ${activeSharedRide.fromLabel}\nTo: ${activeSharedRide.toLabel}\nTime: ${activeSharedRide.time}\n\n${shareRideLink}`
+    ? `Join my LexRide passenger trip\nFrom: ${activeSharedRide.fromLabel}\nTo: ${activeSharedRide.toLabel}\nTime: ${activeSharedRide.time}\n\nJoin the room: ${shareRideLink}\n\nWhen we are ready, one passenger books Bolt or we use a local taxi.`
     : '';
 
   const shareToWhatsApp = () => {
@@ -1385,13 +1385,14 @@ export default function App() {
                       <h2 className="text-2xl font-bold text-black">{user?.firstName || 'User'}!</h2>
                     </div>
                     <div className="bg-primary rounded-3xl p-5 text-white relative shadow-xl overflow-hidden">
-                       <h4 className="text-xl font-bold">Split rides.<br/>Save money.</h4>
+                       <h4 className="text-xl font-bold">Share one ride.<br/>Pay your share.</h4>
+                       <p className="mt-2 max-w-[190px] text-[10px] leading-4 text-white/75">LexRide groups passengers going the same way. You still choose and book the vehicle.</p>
                        <Car size={90} className="absolute -right-6 -bottom-2 text-white/20 rotate-12" />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <Card onClick={() => setScreen('PLAN_TRIP')} className="bg-white border hover:border-primary transition-all">
                         <Car className="text-primary mb-2" size={20} />
-                        <span className="font-bold text-sm text-black">Book Ride</span>
+                        <span className="font-bold text-sm text-black">Create Shared Trip</span>
                       </Card>
                       <Card onClick={() => setScreen('MY_RIDES')} className="bg-gray-50 border">
                         <History className="text-gray-400 mb-2" size={20} />
@@ -1413,7 +1414,7 @@ export default function App() {
               )}
 
               {screen === 'PLAN_TRIP' && (
-                <ScreenWrapper screen="PLAN_TRIP" key="plan" title="Plan Trip" onBack={() => setScreen('HOME')}>
+                <ScreenWrapper screen="PLAN_TRIP" key="plan" title="Create Shared Trip" onBack={() => setScreen('HOME')}>
                   <div className="space-y-6">
                     <Card className="bg-gray-50 border-gray-100">
                       <div className="flex justify-between items-center">
@@ -1495,7 +1496,7 @@ export default function App() {
                     )}
                     {selectedDest && (
                       <div className="space-y-2">
-                        <label className="text-[9px] uppercase font-bold text-gray-400 ml-1">Seats you want to fill</label>
+                        <label className="text-[9px] uppercase font-bold text-gray-400 ml-1">Seats in your group</label>
                         <div className="flex gap-2">
                           {[1, 2, 3, 4].map(n => (
                             <button
@@ -1513,38 +1514,38 @@ export default function App() {
                       disabled={!selectedDest || !rideClockTime || isCreatingRide}
                       onClick={createShareableRide}
                     >
-                      {isCreatingRide ? 'Creating link...' : 'Create Ride & Get Share Link'}
+                      {isCreatingRide ? 'Creating trip room...' : 'Create Trip Room'}
                     </Button>
                     {createRideError && <p className="text-[10px] text-red-500 font-bold ml-1">{createRideError}</p>}
                     <p className="text-[10px] text-gray-400 text-center px-4">
-                      Get a shareable link to send to your WhatsApp group, hostel, or classmates so they can join your ride and split the fare.
+                      Create a passenger-only room, share it on WhatsApp, then book Bolt or use a local taxi together when the group is ready.
                     </p>
                   </div>
                 </ScreenWrapper>
               )}
 
               {screen === 'SHARE_RIDE' && activeSharedRide && (
-                <ScreenWrapper screen="SHARE_RIDE" key="share" title="Share Your Ride" onBack={() => setScreen('PLAN_TRIP')}>
+                <ScreenWrapper screen="SHARE_RIDE" key="share" title="Your Trip Room" onBack={() => setScreen('PLAN_TRIP')}>
                   <div className="space-y-6">
                     <Card className="bg-gray-50 border-gray-100">
                       <div className="space-y-1">
-                        <div className="text-[9px] font-bold text-primary uppercase">Your Ride</div>
+                        <div className="text-[9px] font-bold text-primary uppercase">Passenger Trip</div>
                         <div className="text-sm font-bold text-black">{activeSharedRide.fromLabel} → {activeSharedRide.toLabel}</div>
                         <div className="text-[11px] text-gray-500">
-                          {activeSharedRide.time} · {activeSharedRide.platform} · {activeSharedRide.seats} seat{activeSharedRide.seats > 1 ? 's' : ''}
+                          {activeSharedRide.time} · {activeSharedRide.seats} seat{activeSharedRide.seats > 1 ? 's' : ''} in the room
                         </div>
                       </div>
                     </Card>
 
                     <div className="text-center px-2">
-                      <div className="font-bold text-black text-sm">Share your ride with friends 🚗</div>
+                      <div className="font-bold text-black text-sm">Share this trip room</div>
                       <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                        Send this to your WhatsApp groups, hostel chat, or classmates — anyone heading your way can tap the link and join you.
+                        Send this to a WhatsApp group, hostel chat, or classmates. LexRide groups the passengers; it does not book or manage the driver.
                       </p>
                     </div>
 
                     <div className="space-y-2">
-                      <label className="text-[9px] uppercase font-bold text-gray-400 ml-1">Shareable Link</label>
+                      <label className="text-[9px] uppercase font-bold text-gray-400 ml-1">Trip room link</label>
                       <div className="flex gap-2">
                         <input readOnly value={shareRideLink} className="flex-1 bg-gray-50 border border-gray-200 rounded-xl p-3 text-[11px] text-gray-600 outline-none" />
                         <button
@@ -1554,17 +1555,17 @@ export default function App() {
                           {linkCopied ? 'Copied!' : 'Copy'}
                         </button>
                       </div>
-                      <p className="text-[10px] text-gray-400 ml-1">Copies a ready-to-send message with your route, time, and the link.</p>
+                      <p className="text-[10px] text-gray-400 ml-1">Copies a ready-to-send invite with your route, time, and the link.</p>
                     </div>
 
                     <Button onClick={shareToWhatsApp} className="!bg-[#25D366]">Share on WhatsApp</Button>
 
                     <div className="space-y-2">
                       <div className="text-[9px] uppercase font-bold text-gray-400 ml-1">
-                        Joined ({activeSharedRide.joined.length}/{activeSharedRide.seats})
+                        In the room ({activeSharedRide.joined.length}/{activeSharedRide.seats})
                       </div>
                       {activeSharedRide.joined.length === 0 ? (
-                        <p className="text-xs text-gray-400 ml-1">No one's joined yet — share the link above to get your ride filled faster.</p>
+                        <p className="text-xs text-gray-400 ml-1">No one has joined yet — share the room link to find people going your way.</p>
                       ) : (
                         <div className="space-y-2">
                           {activeSharedRide.joined.map(j => (
@@ -1581,18 +1582,18 @@ export default function App() {
                       onClick={() => openRideChat(activeSharedRide.id, user?.firstName || activeSharedRide.creatorName)}
                       className="!bg-white !text-primary border-2 border-primary"
                     >
-                      Open Group Chat
+                      Open Trip Room
                     </Button>
 
                     {activeSharedRide.joined.length >= activeSharedRide.seats && (
-                      <Button onClick={() => setScreen('MEETING_POINT')}>Ride is full — plan meeting point</Button>
+                      <Button onClick={() => setScreen('RIDE_CHAT')}>Trip is full — open room</Button>
                     )}
                   </div>
                 </ScreenWrapper>
               )}
 
               {screen === 'JOIN_RIDE' && (
-                <ScreenWrapper screen="JOIN_RIDE" key="join" title="Join This Ride" onBack={() => setScreen('HOME')}>
+                <ScreenWrapper screen="JOIN_RIDE" key="join" title="Join Trip Room" onBack={() => setScreen('HOME')}>
                   <div className="space-y-6">
                     {joinRideError && !joinRideData && (
                       <p className="text-sm text-red-500 font-bold text-center">{joinRideError}</p>
@@ -1601,10 +1602,10 @@ export default function App() {
                       <>
                         <Card className="bg-gray-50 border-gray-100">
                           <div className="space-y-1">
-                            <div className="text-[9px] font-bold text-primary uppercase">{joinRideData.creatorName} is going</div>
+                            <div className="text-[9px] font-bold text-primary uppercase">{joinRideData.creatorName} started this room</div>
                             <div className="text-sm font-bold text-black">{joinRideData.fromLabel} → {joinRideData.toLabel}</div>
                             <div className="text-[11px] text-gray-500">
-                              {joinRideData.time} · {joinRideData.platform} · {joinRideData.joined.length}/{joinRideData.seats} seats filled
+                              {joinRideData.time} · {joinRideData.joined.length}/{joinRideData.seats} seats in the room
                             </div>
                           </div>
                         </Card>
@@ -1627,7 +1628,7 @@ export default function App() {
                         >
                           {joinRideData.joined.length >= joinRideData.seats
                             ? 'Ride Full'
-                            : isJoiningRide ? 'Joining...' : 'Join Ride & Open Chat'}
+                            : isJoiningRide ? 'Joining room...' : 'Join Trip Room'}
                         </Button>
                         {joinRideError && <p className="text-[10px] text-red-500 font-bold text-center">{joinRideError}</p>}
                       </>
@@ -1637,14 +1638,24 @@ export default function App() {
               )}
 
               {screen === 'RIDE_CHAT' && chatRide && (
-                <ScreenWrapper screen="RIDE_CHAT" key="ridechat" title="Group Chat" onBack={() => setScreen('HOME')}>
+                <ScreenWrapper screen="RIDE_CHAT" key="ridechat" title="Trip Room" onBack={() => setScreen('HOME')}>
                   <div className="flex flex-col h-full -mx-6 -mt-6">
                     <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
                       <div className="text-[10px] font-bold text-black truncate">
                         {chatRide.fromLabel} → {chatRide.toLabel}
                       </div>
                       <div className="text-[9px] text-gray-400">
-                        {chatRide.time} · {chatRide.platform} · {chatRide.joined.length + 1} {chatRide.joined.length === 0 ? 'person' : 'people'}
+                        {chatRide.time} · {chatRide.joined.length + 1} {chatRide.joined.length === 0 ? 'person' : 'people'} · passenger room
+                      </div>
+                    </div>
+                    <div className="mx-4 mt-3 rounded-2xl border border-primary/15 bg-primary/5 p-3">
+                      <div className="flex items-start gap-2">
+                        <Car size={16} className="mt-0.5 text-primary shrink-0" />
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-primary">When the group is ready</div>
+                          <p className="mt-1 text-[10px] leading-4 text-gray-500">One passenger opens Bolt or arranges a local taxi. LexRide keeps the group, route and meeting point together—it does not contact drivers.</p>
+                          <button onClick={() => setScreen('ACTION_SCREEN')} className="mt-2 text-[10px] font-black text-primary underline underline-offset-2">See transport options</button>
+                        </div>
                       </div>
                     </div>
 
@@ -1723,7 +1734,7 @@ export default function App() {
                         </p>
                       </div>
                       <Button onClick={() => setScreen('PLAN_TRIP')} className="w-full">
-                        Create Ride & Get Share Link
+                        Create Trip Room
                       </Button>
                     </div>
                   ) : (
@@ -1833,21 +1844,33 @@ export default function App() {
               )}
 
               {screen === 'ACTION_SCREEN' && (
-                <ScreenWrapper screen="ACTION_SCREEN" key="actions" title="Book Ride" onBack={() => setScreen('MEETING_POINT')}>
-                   <div className="space-y-4">
-                      <Card onClick={() => { setIsRideActive(true); setScreen('GROUP_CHAT'); }} className="bg-primary/5 border-2 border-primary/20">
-                         <div className="flex gap-4">
-                            <Car className="text-primary" size={24} />
-                            <div><h3 className="font-bold text-sm text-black">Split Fare</h3><p className="text-[10px] text-gray-400">Pay 1/{(selectedRiderIds.size + 1)} of total.</p></div>
-                         </div>
+                <ScreenWrapper screen="ACTION_SCREEN" key="actions" title="Arrange Transport" onBack={() => setScreen('RIDE_CHAT')}>
+                   <div className="space-y-5">
+                      <div className="text-center pt-2">
+                        <div className="w-14 h-14 mx-auto rounded-2xl bg-primary/10 flex items-center justify-center"><Car className="text-primary" size={26} /></div>
+                        <h2 className="mt-4 text-xl font-black text-black">The group is ready.</h2>
+                        <p className="mt-2 px-4 text-xs leading-5 text-gray-500">LexRide has done its job: people going the same way are together. Now arrange one vehicle as a group.</p>
+                      </div>
+                      <Card onClick={() => window.open('https://m.bolt.eu/', '_blank', 'noopener,noreferrer')} className="border-2 border-primary/20 bg-primary/5">
+                        <div className="flex items-center gap-4">
+                          <div className="w-11 h-11 rounded-xl bg-primary flex items-center justify-center"><Car className="text-white" size={22} /></div>
+                          <div className="flex-1"><h3 className="font-bold text-sm text-black">Open Bolt</h3><p className="text-[10px] leading-4 text-gray-500">One passenger books the ride for the agreed pickup point.</p></div><ChevronRight size={18} className="text-primary" />
+                        </div>
                       </Card>
-                      <Button variant="secondary" onClick={() => setScreen('HOME')}>Maybe Later</Button>
+                      <Card onClick={() => { alert('Choose a licensed local taxi at the agreed public meeting point.'); }} className="border bg-white">
+                        <div className="flex items-center gap-4">
+                          <div className="w-11 h-11 rounded-xl bg-gray-100 flex items-center justify-center"><MapPin className="text-gray-500" size={22} /></div>
+                          <div className="flex-1"><h3 className="font-bold text-sm text-black">Use a local taxi</h3><p className="text-[10px] leading-4 text-gray-500">Meet publicly, agree the fare and travel together.</p></div><ChevronRight size={18} className="text-gray-400" />
+                        </div>
+                      </Card>
+                      <div className="rounded-2xl bg-gray-50 p-4 text-center"><p className="text-[10px] leading-4 text-gray-500">LexRide does not book, control or contact the driver. Keep the official trip details and meeting point inside the room.</p></div>
+                      <Button variant="secondary" onClick={() => setScreen('RIDE_CHAT')}>Back to Trip Room</Button>
                    </div>
                 </ScreenWrapper>
               )}
 
               {screen === 'GROUP_CHAT' && (
-                <ScreenWrapper screen="GROUP_CHAT" key="chat" title="Group Chat" onBack={() => setScreen('HOME')}>
+                <ScreenWrapper screen="GROUP_CHAT" key="chat" title="Trip Room" onBack={() => setScreen('HOME')}>
                    <div className="flex flex-col h-full -mx-6 -mt-6">
                       {/* Riders header strip */}
                       <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
