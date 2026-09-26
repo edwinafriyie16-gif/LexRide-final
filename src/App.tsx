@@ -1178,7 +1178,7 @@ export default function App() {
     : '';
 
   const shareMessageText = activeSharedRide
-    ? `Join my LexRide passenger trip\nFrom: ${activeSharedRide.fromLabel}\nTo: ${activeSharedRide.toLabel}\nTime: ${activeSharedRide.time}\n\nJoin the room: ${shareRideLink}\n\nWhen we are ready, one passenger books Bolt or we use a local taxi.`
+    ? `Join my LexRide passenger trip\nFrom: ${activeSharedRide.fromLabel}\nTo: ${activeSharedRide.toLabel}\nTime: ${activeSharedRide.time}\n\nJoin the room: ${shareRideLink}\n\nWhen we are ready, one passenger books Bolt or we arrange a local ride.`
     : '';
 
   const shareToWhatsApp = () => {
@@ -1370,11 +1370,11 @@ export default function App() {
 
               {screen === 'HOME' && (
                 <ScreenWrapper screen="HOME" key="home">
-                  <div className="space-y-6 relative">
+                  <div className="space-y-8 relative">
                     {/* Floating SOS button for map visibility */}
                     <button 
                       onClick={handleSOS} 
-                      className="absolute top-0 right-0 z-[30] w-12 h-12 bg-red-600 rounded-2xl flex flex-col items-center justify-center text-white shadow-xl border-2 border-white/20 active:scale-95 transition-all"
+                      className="absolute top-0 right-0 z-[30] w-14 h-14 bg-[#dc202e] rounded-[1.35rem] flex flex-col items-center justify-center text-white shadow-[0_14px_24px_rgba(220,32,46,0.28)] border-2 border-white/80 active:scale-95 transition-all"
                     >
                       <AlertTriangle size={20} />
                       <span className="text-[6px] font-black uppercase">Police</span>
@@ -1382,26 +1382,26 @@ export default function App() {
 
                     <div>
                       <h3 className="text-gray-400 font-bold uppercase text-[9px]">Hello</h3>
-                      <h2 className="text-2xl font-bold text-black">{user?.firstName || 'User'}!</h2>
+                      <h2 className="text-3xl font-black tracking-tight text-black">{user?.firstName || 'User'}!</h2>
                     </div>
-                    <div className="bg-primary rounded-3xl p-5 text-white relative shadow-xl overflow-hidden">
-                       <h4 className="text-xl font-bold">Share one ride.<br/>Pay your share.</h4>
-                       <p className="mt-2 max-w-[190px] text-[10px] leading-4 text-white/75">LexRide groups passengers going the same way. You still choose and book the vehicle.</p>
-                       <Car size={90} className="absolute -right-6 -bottom-2 text-white/20 rotate-12" />
+                    <div className="bg-[#dc202e] rounded-[2rem] p-7 min-h-[190px] text-white relative shadow-[0_18px_32px_rgba(220,32,46,0.24)] overflow-hidden">
+                       <h4 className="text-2xl font-black leading-tight tracking-tight">Share one ride.<br/>Pay your share.</h4>
+                       <p className="mt-4 max-w-[220px] text-sm leading-6 text-white/75">LexRide groups passengers going the same way. You still choose and book the vehicle.</p>
+                       <Car size={118} strokeWidth={1.5} className="absolute -right-7 -bottom-5 text-white/20 rotate-12" />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <Card onClick={() => setScreen('PLAN_TRIP')} className="bg-white border hover:border-primary transition-all">
-                        <Car className="text-primary mb-2" size={20} />
-                        <span className="font-bold text-sm text-black">Create Shared Trip</span>
+                    <div className="grid grid-cols-2 gap-5">
+                      <Card onClick={() => setScreen('PLAN_TRIP')} className="min-h-[142px] bg-white border border-gray-100 rounded-[2rem] p-6 shadow-[0_8px_24px_rgba(15,23,42,0.05)] hover:border-primary transition-all">
+                        <Car className="text-primary mb-5" size={24} />
+                        <span className="font-black text-lg leading-7 text-black">Create Shared Trip</span>
                       </Card>
-                      <Card onClick={() => setScreen('MY_RIDES')} className="bg-gray-50 border">
-                        <History className="text-gray-400 mb-2" size={20} />
-                        <span className="font-bold text-sm text-black">History</span>
+                      <Card onClick={() => setScreen('MY_RIDES')} className="min-h-[142px] bg-[#fbfcff] border border-gray-100 rounded-[2rem] p-6 shadow-[0_8px_24px_rgba(15,23,42,0.03)]">
+                        <History className="text-gray-400 mb-5" size={24} />
+                        <span className="font-black text-lg leading-7 text-black">History</span>
                       </Card>
                     </div>
                     <div>
-                      <h5 className="font-bold text-black text-sm mb-3">Your Location</h5>
-                      <Card className="p-0 overflow-hidden h-40 border border-gray-100">
+                      <h5 className="font-black text-xl tracking-tight text-black mb-4">Your Location</h5>
+                      <Card className="p-0 overflow-hidden h-56 rounded-[2rem] border border-gray-100 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
                       {userCoords ? (
                           <iframe title="map" width="100%" height="100%" style={{ border: 0 }}
                             src={`https://www.openstreetmap.org/export/embed.html?bbox=${userCoords.lng - 0.01},${userCoords.lat - 0.01},${userCoords.lng + 0.01},${userCoords.lat + 0.01}&layer=mapnik&marker=${userCoords.lat},${userCoords.lng}`}
@@ -1518,7 +1518,7 @@ export default function App() {
                     </Button>
                     {createRideError && <p className="text-[10px] text-red-500 font-bold ml-1">{createRideError}</p>}
                     <p className="text-[10px] text-gray-400 text-center px-4">
-                      Create a passenger-only room, share it on WhatsApp, then book Bolt or use a local taxi together when the group is ready.
+                      Create a passenger-only room, share it on WhatsApp, then book Bolt or arrange a local ride together when the group is ready.
                     </p>
                   </div>
                 </ScreenWrapper>
@@ -1653,7 +1653,7 @@ export default function App() {
                         <Car size={16} className="mt-0.5 text-primary shrink-0" />
                         <div className="min-w-0">
                           <div className="text-[10px] font-black uppercase tracking-wider text-primary">When the group is ready</div>
-                          <p className="mt-1 text-[10px] leading-4 text-gray-500">One passenger opens Bolt or arranges a local taxi. LexRide keeps the group, route and meeting point together—it does not contact drivers.</p>
+                          <p className="mt-1 text-[10px] leading-4 text-gray-500">One passenger opens Bolt or arranges a local ride. LexRide keeps the group, route and meeting point together—it does not contact drivers.</p>
                           <button onClick={() => setScreen('ACTION_SCREEN')} className="mt-2 text-[10px] font-black text-primary underline underline-offset-2">See transport options</button>
                         </div>
                       </div>
@@ -1857,10 +1857,10 @@ export default function App() {
                           <div className="flex-1"><h3 className="font-bold text-sm text-black">Open Bolt</h3><p className="text-[10px] leading-4 text-gray-500">One passenger books the ride for the agreed pickup point.</p></div><ChevronRight size={18} className="text-primary" />
                         </div>
                       </Card>
-                      <Card onClick={() => { alert('Choose a licensed local taxi at the agreed public meeting point.'); }} className="border bg-white">
+                      <Card onClick={() => { alert('Choose a trusted local driver at the agreed public meeting point.'); }} className="border bg-white">
                         <div className="flex items-center gap-4">
                           <div className="w-11 h-11 rounded-xl bg-gray-100 flex items-center justify-center"><MapPin className="text-gray-500" size={22} /></div>
-                          <div className="flex-1"><h3 className="font-bold text-sm text-black">Use a local taxi</h3><p className="text-[10px] leading-4 text-gray-500">Meet publicly, agree the fare and travel together.</p></div><ChevronRight size={18} className="text-gray-400" />
+                          <div className="flex-1"><h3 className="font-bold text-sm text-black">Use a local driver</h3><p className="text-[10px] leading-4 text-gray-500">Meet publicly, agree the fare and travel together.</p></div><ChevronRight size={18} className="text-gray-400" />
                         </div>
                       </Card>
                       <div className="rounded-2xl bg-gray-50 p-4 text-center"><p className="text-[10px] leading-4 text-gray-500">LexRide does not book, control or contact the driver. Keep the official trip details and meeting point inside the room.</p></div>
