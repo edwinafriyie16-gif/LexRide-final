@@ -84,6 +84,17 @@ const initialTrips: Trip[] = [
 ];
 
 const places = ["Accra", "Kumasi", "Cape Coast", "Madina", "Legon", "Accra Mall", "Kasoa", "Tema"];
+const quickLocations: LocationSuggestion[] = ([
+  ["Adum", "Adum, Kumasi, Ghana", 6.689568, -1.618825],
+  ["Kumasi", "Kumasi, Ashanti Region, Ghana", 6.700071, -1.630783],
+  ["Kromuase", "Kromuase, Kumasi, Ghana", 6.673, -1.69],
+  ["Ayeduase", "Ayeduase, Kumasi, Ghana", 6.675, -1.55944],
+  ["KNUST", "Kwame Nkrumah University of Science and Technology, Kumasi", 6.6745, -1.5716],
+  ["Kejetia", "Kejetia, Kumasi, Ghana", 6.697, -1.624],
+  ["Bantama", "Bantama, Kumasi, Ghana", 6.702, -1.642],
+  ["Suame", "Suame, Kumasi, Ghana", 6.716, -1.62],
+] as const).map(([name, formatted_address, lat, lng]) => ({ name, formatted_address, geometry: { location: { lat, lng } }, source: "LexRide quick directory" }));
+const locationCache = new Map<string, LocationSuggestion[]>();
 
 const toast = {
   success: (message: string, options?: { description?: string }) => window.alert(options?.description ? `${message}\n\n${options.description}` : message),
@@ -132,9 +143,17 @@ function LocationInput({ label, value, placeholder, onChange, onSelect, locked =
       setError("");
       return;
     }
+    const quickMatches = quickLocations.filter((place) => `${place.name} ${place.formatted_address}`.toLowerCase().includes(query.toLowerCase())).slice(0, 5);
+    const cached = locationCache.get(query.toLowerCase());
+    if (cached) {
+      setSuggestions(cached);
+      setLoading(false);
+      return;
+    }
+    if (quickMatches.length) setSuggestions(quickMatches);
+    setLoading(true);
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
-      setLoading(true);
       setError("");
       try {
         const response = await fetch(`/api/textsearch?query=${encodeURIComponent(query)}&region=GH&radius=25000`, { signal: controller.signal });
@@ -144,7 +163,9 @@ function LocationInput({ label, value, placeholder, onChange, onSelect, locked =
           setError(data.error || "Google Maps search is unavailable right now");
           return;
         }
-        setSuggestions((data.results || []).slice(0, 5));
+        const results = (data.results || []).slice(0, 5);
+        locationCache.set(query.toLowerCase(), results);
+        setSuggestions(results.length ? results : quickMatches);
       } catch {
         if (controller.signal.aborted) return;
         setSuggestions([]);
@@ -152,7 +173,7 @@ function LocationInput({ label, value, placeholder, onChange, onSelect, locked =
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
-    }, 350);
+    }, 150);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
