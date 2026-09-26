@@ -328,6 +328,7 @@ export default function Home() {
   const [selectedLocations, setSelectedLocations] = useState<{ from?: LocationSuggestion; to?: LocationSuggestion }>({});
   const [createdTrip, setCreatedTrip] = useState<Trip | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
+  const [locationMessage, setLocationMessage] = useState("");
 
   const filteredTrips = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -383,6 +384,9 @@ export default function Home() {
       return;
     }
     setLocationLoading(true);
+    setLocationMessage("");
+    setForm((current) => ({ ...current, from: "" }));
+    setSelectedLocations((current) => ({ ...current, from: undefined }));
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       const fallback: LocationSuggestion = { name: "Your current location", formatted_address: "Device GPS location", geometry: { location: { lat: coords.latitude, lng: coords.longitude } }, source: "Device GPS" };
       try {
@@ -391,19 +395,24 @@ export default function Home() {
         const place = data.result || fallback;
         setForm((current) => ({ ...current, from: place.name }));
         setSelectedLocations((current) => ({ ...current, from: place }));
-        toast.success("Starting point found", { description: place.formatted_address });
+        setLocationMessage(`Starting point: ${place.formatted_address || place.name}`);
       } catch {
         setForm((current) => ({ ...current, from: fallback.name }));
         setSelectedLocations((current) => ({ ...current, from: fallback }));
-        toast.info("Using your device location", { description: "Your exact area name could not be loaded, but routing can still use your GPS position." });
+        setLocationMessage("Starting point set from your device GPS.");
       } finally {
         setLocationLoading(false);
       }
     }, (error) => {
       setLocationLoading(false);
+      setLocationMessage("Location permission was not granted. You can enter a starting place manually.");
       toast.error(error.code === error.PERMISSION_DENIED ? "Location permission was denied. You can enter your starting place manually." : "We could not find your location. Check GPS and try again.");
     }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
   };
+
+  useEffect(() => {
+    if (view === "create" && !selectedLocations.from && !locationLoading) useCurrentLocation();
+  }, [view]);
 
   const confirmMeetingPoint = (point: string) => {
     if (!showSheet) return;
@@ -465,7 +474,7 @@ export default function Home() {
           {!createdTrip ? <>
             <div className="mt-7"><div className="eyebrow">Start a shared trip</div><h1 className="mt-3 font-display text-4xl font-bold tracking-[-0.05em] md:text-6xl">Where are you<br /><span className="text-terracotta">heading?</span></h1><p className="mt-4 max-w-md text-base leading-7 text-slate">Create a trip in under a minute. Share the link, then choose a meeting point together.</p></div>
             <form onSubmit={createTrip} className="form-card mt-8">
-              <div className="grid gap-4 md:grid-cols-2"><div><LocationInput label="From" value={form.from} onChange={(value) => { setForm({ ...form, from: value }); setSelectedLocations((locations) => ({ ...locations, from: undefined })); }} onSelect={(place) => { setForm({ ...form, from: place.name }); setSelectedLocations((locations) => ({ ...locations, from: place })); }} placeholder="Your current location" /><CurrentLocationButton loading={locationLoading} onClick={useCurrentLocation} /><p className="mt-1 text-[10px] text-slate">LexRide only uses this to set your trip origin.</p></div><LocationInput label="Going to" value={form.to} onChange={(value) => { setForm({ ...form, to: value }); setSelectedLocations((locations) => ({ ...locations, to: undefined })); }} onSelect={(place) => { setForm({ ...form, to: place.name }); setSelectedLocations((locations) => ({ ...locations, to: place })); }} placeholder="e.g. KNUST or Kejetia" /></div>
+              <div className="grid gap-4 md:grid-cols-2"><div><LocationInput label="From · your current location" value={form.from} onChange={(value) => { setForm({ ...form, from: value }); setSelectedLocations((locations) => ({ ...locations, from: undefined })); }} onSelect={(place) => { setForm({ ...form, from: place.name }); setSelectedLocations((locations) => ({ ...locations, from: place })); }} placeholder={locationLoading ? "Finding your location…" : "Your current location" } /><CurrentLocationButton loading={locationLoading} onClick={useCurrentLocation} />{locationMessage && <p className="mt-2 rounded-lg bg-[#eef7f0] px-3 py-2 text-[10px] font-semibold text-forest">{locationMessage}</p>}<p className="mt-1 text-[10px] text-slate">Your starting point is detected automatically. Tap the field only if you need to change it.</p></div><LocationInput label="Going to" value={form.to} onChange={(value) => { setForm({ ...form, to: value }); setSelectedLocations((locations) => ({ ...locations, to: undefined })); }} onSelect={(place) => { setForm({ ...form, to: place.name }); setSelectedLocations((locations) => ({ ...locations, to: place })); }} placeholder="e.g. KNUST or Kejetia" /></div>
               <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="field-label">Date<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="field-input" /></label><label className="field-label">Departure time<input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} className="field-input" /></label></div>
               <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="field-label">How many seats? <span className="font-normal text-slate">(including you)</span><select value={form.seats} onChange={(e) => setForm({ ...form, seats: e.target.value })} className="field-input"><option value="2">2 seats</option><option value="3">3 seats</option><option value="4">4 seats</option></select></label><label className="field-label">Target contribution <span className="font-normal text-slate">(GHS / person)</span><input type="number" min="0" value={form.contribution} onChange={(e) => setForm({ ...form, contribution: e.target.value })} placeholder="e.g. 35" className="field-input" /></label></div>
               <RouteMap from={form.from} to={form.to} fromLocation={selectedLocations.from} toLocation={selectedLocations.to} />
