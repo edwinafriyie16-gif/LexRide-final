@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Clock3,
   Copy,
+  Loader2,
   MapPin,
   MessageCircle,
   Navigation,
@@ -37,6 +38,7 @@ type LocationSuggestion = {
   name: string;
   formatted_address?: string;
   geometry: { location: { lat: number; lng: number } };
+  source?: string;
 };
 
 const initialTrips: Trip[] = [
@@ -168,6 +170,10 @@ function LocationInput({ label, value, placeholder, onChange, onSelect }: { labe
       {error && <span className="mt-1 block text-[10px] font-semibold text-terracotta">{error}</span>}
     </label>
   );
+}
+
+function CurrentLocationButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {
+  return <button type="button" className="button-soft mt-2 !w-full justify-center !py-2.5 text-xs" onClick={onClick} disabled={loading}><Navigation className="mr-2 h-3.5 w-3.5" />{loading ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />Finding you…</> : "Use my current location"}</button>;
 }
 
 function decodePolyline(encoded: string): Array<[number, number]> {
@@ -321,6 +327,7 @@ export default function Home() {
   const [form, setForm] = useState({ from: "", to: "", date: "", time: "", seats: "3", contribution: "" });
   const [selectedLocations, setSelectedLocations] = useState<{ from?: LocationSuggestion; to?: LocationSuggestion }>({});
   const [createdTrip, setCreatedTrip] = useState<Trip | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
 
   const filteredTrips = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -350,7 +357,7 @@ export default function Home() {
       return;
     }
     if (!selectedLocations.from || !selectedLocations.to) {
-      toast.error("Choose both locations from the Google Maps suggestions");
+      toast.error("Choose your current location or select both places from the map suggestions");
       return;
     }
     const trip: Trip = {
@@ -368,6 +375,34 @@ export default function Home() {
     };
     setTrips((items) => [trip, ...items]);
     setCreatedTrip(trip);
+  };
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Location is not available on this device. Enter your starting place manually.");
+      return;
+    }
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      const fallback: LocationSuggestion = { name: "Your current location", formatted_address: "Device GPS location", geometry: { location: { lat: coords.latitude, lng: coords.longitude } }, source: "Device GPS" };
+      try {
+        const response = await fetch(`/api/reverse?lat=${coords.latitude}&lng=${coords.longitude}`);
+        const data = await response.json();
+        const place = data.result || fallback;
+        setForm((current) => ({ ...current, from: place.name }));
+        setSelectedLocations((current) => ({ ...current, from: place }));
+        toast.success("Starting point found", { description: place.formatted_address });
+      } catch {
+        setForm((current) => ({ ...current, from: fallback.name }));
+        setSelectedLocations((current) => ({ ...current, from: fallback }));
+        toast.info("Using your device location", { description: "Your exact area name could not be loaded, but routing can still use your GPS position." });
+      } finally {
+        setLocationLoading(false);
+      }
+    }, (error) => {
+      setLocationLoading(false);
+      toast.error(error.code === error.PERMISSION_DENIED ? "Location permission was denied. You can enter your starting place manually." : "We could not find your location. Check GPS and try again.");
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
   };
 
   const confirmMeetingPoint = (point: string) => {
@@ -430,7 +465,7 @@ export default function Home() {
           {!createdTrip ? <>
             <div className="mt-7"><div className="eyebrow">Start a shared trip</div><h1 className="mt-3 font-display text-4xl font-bold tracking-[-0.05em] md:text-6xl">Where are you<br /><span className="text-terracotta">heading?</span></h1><p className="mt-4 max-w-md text-base leading-7 text-slate">Create a trip in under a minute. Share the link, then choose a meeting point together.</p></div>
             <form onSubmit={createTrip} className="form-card mt-8">
-              <div className="grid gap-4 md:grid-cols-2"><LocationInput label="From" value={form.from} onChange={(value) => { setForm({ ...form, from: value }); setSelectedLocations((locations) => ({ ...locations, from: undefined })); }} onSelect={(place) => { setForm({ ...form, from: place.name }); setSelectedLocations((locations) => ({ ...locations, from: place })); }} placeholder="e.g. Adum or Ayeduase" /><LocationInput label="Going to" value={form.to} onChange={(value) => { setForm({ ...form, to: value }); setSelectedLocations((locations) => ({ ...locations, to: undefined })); }} onSelect={(place) => { setForm({ ...form, to: place.name }); setSelectedLocations((locations) => ({ ...locations, to: place })); }} placeholder="e.g. KNUST or Kejetia" /></div>
+              <div className="grid gap-4 md:grid-cols-2"><div><LocationInput label="From" value={form.from} onChange={(value) => { setForm({ ...form, from: value }); setSelectedLocations((locations) => ({ ...locations, from: undefined })); }} onSelect={(place) => { setForm({ ...form, from: place.name }); setSelectedLocations((locations) => ({ ...locations, from: place })); }} placeholder="Your current location" /><CurrentLocationButton loading={locationLoading} onClick={useCurrentLocation} /><p className="mt-1 text-[10px] text-slate">LexRide only uses this to set your trip origin.</p></div><LocationInput label="Going to" value={form.to} onChange={(value) => { setForm({ ...form, to: value }); setSelectedLocations((locations) => ({ ...locations, to: undefined })); }} onSelect={(place) => { setForm({ ...form, to: place.name }); setSelectedLocations((locations) => ({ ...locations, to: place })); }} placeholder="e.g. KNUST or Kejetia" /></div>
               <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="field-label">Date<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="field-input" /></label><label className="field-label">Departure time<input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} className="field-input" /></label></div>
               <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="field-label">How many seats? <span className="font-normal text-slate">(including you)</span><select value={form.seats} onChange={(e) => setForm({ ...form, seats: e.target.value })} className="field-input"><option value="2">2 seats</option><option value="3">3 seats</option><option value="4">4 seats</option></select></label><label className="field-label">Target contribution <span className="font-normal text-slate">(GHS / person)</span><input type="number" min="0" value={form.contribution} onChange={(e) => setForm({ ...form, contribution: e.target.value })} placeholder="e.g. 35" className="field-input" /></label></div>
               <RouteMap from={form.from} to={form.to} fromLocation={selectedLocations.from} toLocation={selectedLocations.to} />

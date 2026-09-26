@@ -190,6 +190,25 @@ async function startServer() {
     }
   });
 
+  app.get("/api/reverse", async (req, res) => {
+    const latitude = Number(req.query.lat);
+    const longitude = Number(req.query.lng);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return res.status(400).json({ status: "INVALID_COORDINATES" });
+    try {
+      if (GEOAPIFY_API_KEY) {
+        const params = new URLSearchParams({ lat: String(latitude), lon: String(longitude), apiKey: GEOAPIFY_API_KEY });
+        const response = await fetch(`https://api.geoapify.com/v1/geocode/reverse?${params.toString()}`);
+        const data = await response.json();
+        const properties = data.features?.[0]?.properties;
+        if (response.ok && properties) return res.json({ status: "OK", source: "Geoapify", result: { name: properties.name || properties.city || properties.suburb || properties.district || "Current location", formatted_address: properties.formatted || "Current location", geometry: { location: { lat: latitude, lng: longitude } } } });
+      }
+      return res.json({ status: "OK", source: "Device GPS", result: { name: "Your current location", formatted_address: `GPS location · ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`, geometry: { location: { lat: latitude, lng: longitude } } } });
+    } catch (error) {
+      console.error('[Reverse] Error:', error);
+      return res.json({ status: "OK", source: "Device GPS", result: { name: "Your current location", formatted_address: `GPS location · ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`, geometry: { location: { lat: latitude, lng: longitude } } } });
+    }
+  });
+
   // API Proxy for Google Text Search (Destinations)
   app.get("/api/textsearch", async (req, res) => {
     const { query, location, radius, region } = req.query;
