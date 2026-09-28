@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from "crypto";
+import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "crypto";
 import { supabaseRequest } from "./_rideStore.js";
 
 const supabaseAdminRequest = <T>(path: string, init: RequestInit = {}) => supabaseRequest<T>(path, init, true);
@@ -32,12 +32,13 @@ export async function signUp(fullName: string, sex: "Male" | "Female", password:
   const name = fullName.trim().replace(/\s+/g, " ");
   if (name.length < 2 || name.length > 120) throw new Error("Enter a valid name");
   if (password.length < 6) throw new Error("Password must be at least 6 characters");
+  const id = randomUUID();
   const rows = await supabaseAdminRequest<AccountRow[]>("lexride_accounts", {
     method: "POST",
     headers: { Prefer: "return=representation" },
-    body: JSON.stringify({ full_name: name, sex, password_hash: hashPassword(password) }),
+    body: JSON.stringify({ id, full_name: name, sex, password_hash: hashPassword(password) }),
   });
-  const account = rows[0];
+  const account = rows?.[0] || (await supabaseAdminRequest<AccountRow[]>(`lexride_accounts?id=eq.${encodeURIComponent(id)}&select=id,full_name,sex,password_hash&limit=1`))[0];
   if (!account) throw new Error("Account could not be created");
   return { account: publicAccount(account), token: await createSession(account.id) };
 }

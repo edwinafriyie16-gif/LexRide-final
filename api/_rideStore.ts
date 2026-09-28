@@ -85,7 +85,8 @@ export async function supabaseRequest<T>(path: string, init: RequestInit = {}, a
     throw new Error(`Supabase request failed (${response.status}): ${detail}`);
   }
   if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  const body = await response.text();
+  return (body ? JSON.parse(body) : undefined) as T;
 }
 
 function makeId(): string {
