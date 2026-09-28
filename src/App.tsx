@@ -543,8 +543,11 @@ export default function Home() {
     if (!joinTrip || !guestName.trim() || !guestSex) { toast.error("Enter your name and confirm Male or Female first"); return; }
     try {
       const response = await fetch(`/api/rides/${encodeURIComponent(joinTrip.id)}/join`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ firstName: guestName.trim(), sex: guestSex }) });
-      if (!response.ok) throw new Error("Join request failed");
-      const ride = await response.json();
+      const raw = await response.text();
+      let data: any = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
+      if (!response.ok) throw new Error(data.error || `Join request failed (${response.status})`);
+      const ride = data;
       const latest = ride.joined?.find((member: any) => member.firstName === guestName.trim() && member.status === "Waiting");
       setGuestRequests((items) => [...items, { id: latest?.id || `guest-${Date.now()}`, name: guestName.trim(), sex: guestSex, status: "Waiting" }]);
       setJoinStage("waiting");

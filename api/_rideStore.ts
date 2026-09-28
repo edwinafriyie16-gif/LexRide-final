@@ -174,11 +174,11 @@ export async function joinRide(id: string, firstName: string, sex: "Male" | "Fem
     method: "POST",
     headers: { Prefer: "return=representation" },
     body: JSON.stringify({ trip_id: id, account_id: accountId ?? null, name: firstName.trim().slice(0, 80), sex, status: "Waiting" }),
-  });
+  }, Boolean(accountId));
   await supabaseRequest("lexride_trip_messages", {
     method: "POST",
     body: JSON.stringify({ trip_id: id, sender: "LexRide", sender_sex: null, text: `${firstName.trim().slice(0, 80)} requested to join the trip.` }),
-  });
+  }, Boolean(accountId));
   return (await loadRide(id)) as SharedRide;
 }
 
