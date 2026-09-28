@@ -2,7 +2,9 @@ import { addMessage, createRide, getRide, joinRide, setMemberStatus } from "../_
 
 function route(req: any) {
   const value = req.query?.path;
-  return (Array.isArray(value) ? value.join("/") : String(value || "")).replace(/^\/+|\/+$/g, "");
+  if (value) return (Array.isArray(value) ? value.join("/") : String(value)).replace(/^\/+|\/+$/g, "");
+  const pathname = String(req.url || "").split("?", 1)[0];
+  return pathname.replace(/^\/api\/rides\/?/, "").replace(/^\/+|\/+$/g, "");
 }
 
 export default async function handler(req: any, res: any) {
