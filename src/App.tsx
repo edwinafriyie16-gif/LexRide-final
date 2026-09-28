@@ -440,17 +440,25 @@ export default function Home() {
     let cancelled = false;
     fetch(`/api/rides/${encodeURIComponent(tripId)}`).then((response) => response.ok ? response.json() : null).then((ride) => {
       if (cancelled || !ride) return;
-      const sharedTrip: Trip = { id: ride.id, from: ride.fromLabel, to: ride.toLabel, date: ride.date || "Shared trip", time: ride.time, seats: Number(ride.seats) || 3, joined: ride.joined?.length || 1, contribution: 0, meetingPoint: "Choose together", host: ride.creatorName || "Trip creator", status: "Open" };
+      const sharedTrip: Trip = { id: ride.id, from: ride.fromLabel, to: ride.toLabel, date: ride.date || "Shared trip", time: ride.time, seats: Number(ride.seats) || 3, joined: ride.joined?.filter((member: any) => member.status !== "Declined").length + 1 || 1, contribution: 0, meetingPoint: "Choose together", host: ride.creatorName || "Trip creator", hostSex: ride.creatorSex, status: "Open" };
       setTrips((items) => items.some((item) => item.id === sharedTrip.id) ? items : [sharedTrip, ...items]);
       join(sharedTrip);
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, []);
 
-  const submitJoinRequest = () => {
+  const submitJoinRequest = async () => {
     if (!joinTrip || !guestName.trim() || !guestSex) { toast.error("Enter your name and confirm Male or Female first"); return; }
-    setGuestRequests((items) => [...items, { id: `guest-${Date.now()}`, name: guestName.trim(), sex: guestSex, status: "Waiting" }]);
-    setJoinStage("waiting");
+    try {
+      const response = await fetch(`/api/rides/${encodeURIComponent(joinTrip.id)}/join`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ firstName: guestName.trim(), sex: guestSex }) });
+      if (!response.ok) throw new Error("Join request failed");
+      const ride = await response.json();
+      const latest = ride.joined?.find((member: any) => member.firstName === guestName.trim() && member.status === "Waiting");
+      setGuestRequests((items) => [...items, { id: latest?.id || `guest-${Date.now()}`, name: guestName.trim(), sex: guestSex, status: "Waiting" }]);
+      setJoinStage("waiting");
+    } catch {
+      toast.error("We could not send your join request. Please try again.");
+    }
   };
 
   const approveGuest = (request: GuestRequest) => {
@@ -461,11 +469,19 @@ export default function Home() {
 
   const declineGuest = (request: GuestRequest) => setGuestRequests((items) => items.map((item) => item.id === request.id ? { ...item, status: "Declined" } : item));
 
-  const sendChatMessage = () => {
+  const sendChatMessage = async () => {
     const text = chatDraft.trim();
-    if (!text) return;
-    setChatMessages((items) => [...items, { id: `message-${Date.now()}`, sender: "You", text, mine: true }]);
-    setChatDraft("");
+    const activeTrip = joinTrip || createdTrip;
+    if (!text || !activeTrip) return;
+    try {
+      const response = await fetch(`/api/rides/${encodeURIComponent(activeTrip.id)}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sender: "You", senderSex: guestSex || createdTrip?.hostSex, text }) });
+      if (!response.ok) throw new Error("Message failed");
+      const ride = await response.json();
+      setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === "You" })));
+      setChatDraft("");
+    } catch {
+      toast.error("We could not send that message. Please try again.");
+    }
   };
 
   const createTrip = async (e: FormEvent) => {
@@ -480,7 +496,7 @@ export default function Home() {
     }
     let sharedId = `LX-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
     try {
-      const response = await fetch("/api/rides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fromLabel: form.from, toLabel: form.to, toLat: selectedLocations.to.geometry.location.lat, toLng: selectedLocations.to.geometry.location.lng, time: form.time, date: form.date, seats: Number(form.seats), platform: "Passenger arranged", creatorName: "You" }) });
+      const response = await fetch("/api/rides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fromLabel: form.from, toLabel: form.to, toLat: selectedLocations.to.geometry.location.lat, toLng: selectedLocations.to.geometry.location.lng, time: form.time, date: form.date, seats: Number(form.seats), platform: "Passenger arranged", creatorName: "You", creatorSex: form.hostSex }) });
       if (response.ok) {
         const sharedRide = await response.json();
         sharedId = sharedRide.id || sharedId;

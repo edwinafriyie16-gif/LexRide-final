@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { randomBytes } from "crypto";
+import { createRide, getRide, joinRide, addMessage } from "./api/_rideStore.js";
 
 interface SharedRideJoiner {
   id: string;
@@ -57,67 +58,54 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Create a shareable ride. Returns { id } used to build the join link.
-  app.post("/api/rides", (req, res) => {
+  // Shared rides use the same Supabase-backed store as the Vercel handlers.
+  app.post("/api/rides", async (req, res) => {
     try {
-      const { fromLabel, toLabel, toLat, toLng, time, seats, platform, creatorName } = req.body || {};
-      if (!fromLabel || !toLabel || !time || !creatorName) {
-        return res.status(400).json({ error: "Missing required ride fields" });
-      }
-      const id = makeRideId();
-      const ride: SharedRide = {
-        id,
-        fromLabel,
-        toLabel,
-        toLat,
-        toLng,
-        time,
-        seats: Number(seats) || 3,
-        platform: platform || "Bolt",
-        creatorName,
-        createdAt: Date.now(),
-        joined: [],
-        messages: [],
-      };
-      sharedRides.set(id, ride);
-      res.json(ride);
+      const { fromLabel, toLabel, toLat, toLng, date, time, seats, platform, creatorName, creatorSex } = req.body || {};
+      if (!fromLabel || !toLabel || !time || !creatorName) return res.status(400).json({ error: "Missing required ride fields" });
+      return res.json(await createRide({ fromLabel, toLabel, toLat, toLng, date, time, seats, platform, creatorName, creatorSex }));
     } catch (error) {
       console.error("[CreateRide] Error:", error);
-      res.status(500).json({ error: String(error) });
+      return res.status(500).json({ error: String(error) });
     }
   });
 
-  // Fetch a shared ride by id (used by the join-via-link screen).
-  app.get("/api/rides/:id", (req, res) => {
-    const ride = sharedRides.get(req.params.id);
-    if (!ride) return res.status(404).json({ error: "Ride not found" });
-    res.json(ride);
-  });
-
-  // Join a shared ride.
-  app.post("/api/rides/:id/join", (req, res) => {
-    const ride = sharedRides.get(req.params.id);
-    if (!ride) return res.status(404).json({ error: "Ride not found" });
-    const { firstName } = req.body || {};
-    if (!firstName) return res.status(400).json({ error: "Missing firstName" });
-    if (ride.joined.length >= ride.seats) {
-      return res.status(409).json({ error: "Ride is full" });
+  app.get("/api/rides/:id", async (req, res) => {
+    try {
+      const ride = await getRide(req.params.id);
+      if (!ride) return res.status(404).json({ error: "Ride not found" });
+      return res.json(ride);
+    } catch (error) {
+      console.error("[GetRide] Error:", error);
+      return res.status(500).json({ error: String(error) });
     }
-    ride.joined.push({ id: makeRideId(), firstName, joinedAt: Date.now() });
-    ride.messages.push({ id: makeRideId(), sender: "System", text: `${firstName} joined the ride 🎉`, createdAt: Date.now() });
-    res.json(ride);
   });
 
-  // Post a chat message to a ride's group chat.
-  app.post("/api/rides/:id/messages", (req, res) => {
-    const ride = sharedRides.get(req.params.id);
-    if (!ride) return res.status(404).json({ error: "Ride not found" });
-    const { sender, text } = req.body || {};
-    if (!sender || !text) return res.status(400).json({ error: "Missing sender or text" });
-    const trimmed = String(text).trim().slice(0, 500);
-    if (!trimmed) return res.status(400).json({ error: "Message is empty" });
-    ride.messages.push({ id: makeRideId(), sender: String(sender).slice(0, 40), text: trimmed, createdAt: Date.now() });
-    res.json(ride);
+  app.post("/api/rides/:id/join", async (req, res) => {
+    try {
+      const { firstName, sex } = req.body || {};
+      if (!firstName || !sex) return res.status(400).json({ error: "Missing firstName or sex" });
+      if (sex !== "Male" && sex !== "Female") return res.status(400).json({ error: "Sex must be Male or Female" });
+      const result = await joinRide(req.params.id, firstName, sex);
+      if ("error" in result) return res.status(result.status).json({ error: result.error });
+      return res.json(result);
+    } catch (error) {
+      console.error("[JoinRide] Error:", error);
+      return res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/rides/:id/messages", async (req, res) => {
+    try {
+      const { sender, senderSex, text } = req.body || {};
+      if (!sender || !text) return res.status(400).json({ error: "Missing sender or text" });
+      const result = await addMessage(req.params.id, sender, text, senderSex);
+      if ("error" in result) return res.status(result.status).json({ error: result.error });
+      return res.json(result);
+    } catch (error) {
+      console.error("[AddMessage] Error:", error);
+      return res.status(500).json({ error: String(error) });
+    }
   });
 
   // API Proxy for Google Nearby Search (Places API New)
