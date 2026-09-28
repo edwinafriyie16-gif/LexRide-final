@@ -438,7 +438,10 @@ export default function Home() {
     setAuthBusy(true);
     try {
       const response = await fetch(`/api/auth/${authMode}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fullName: authName.trim(), sex: authSex, password: authPassword }) });
-      const data = await response.json();
+      const raw = await response.text();
+      let data: any = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
+      if (!raw && !response.ok) throw new Error(`Account request failed (${response.status})`);
       if (!response.ok) throw new Error(data.error || "Authentication failed");
       setAccount(data.account);
       setAuthName(""); setAuthSex(""); setAuthPassword(""); setShowAuth(false);
