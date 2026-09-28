@@ -26,5 +26,7 @@ The API now stores shared trips, join requests, approvals, and trip-room message
 LexRide accounts use the requested no-OTP flow: full name, sex, and password at sign-up; full name and password at sign-in. Passwords are scrypt-hashed on the server, and the browser receives an HTTP-only session cookie. Multiple accounts may use the same name because the password distinguishes them. Account and session tables are server-only; the service-role key is required for auth endpoints. Password recovery is not available until an email or phone recovery method is added.
 
 Vercel Hobby deployment note: authentication routes are consolidated in `api/auth.ts`, and all trip-room routes are consolidated in `api/rides.ts`. Rewrites preserve the existing `/api/auth/*` and `/api/rides/*` URLs while keeping the deployment below the 12-function Hobby limit.
+
+The current deployment baseline is commit `6684a6d`.
 4. Run the app:
    `npm run dev`
