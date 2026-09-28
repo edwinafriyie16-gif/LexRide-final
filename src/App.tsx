@@ -38,6 +38,7 @@ type Trip = {
 
 type GuestRequest = { id: string; name: string; sex: "Male" | "Female"; status: "Waiting" | "Approved" | "Declined" };
 type ChatMessage = { id: string; sender: string; text: string; mine?: boolean };
+type Account = { id: string; fullName: string; sex: "Male" | "Female" };
 
 type LocationSuggestion = {
   name: string;
@@ -404,12 +405,50 @@ export default function Home() {
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationMessage, setLocationMessage] = useState("");
   const [currentLocationLocked, setCurrentLocationLocked] = useState(false);
+  const [account, setAccount] = useState<Account | null>(null);
+  const [showAuth, setShowAuth] = useState(false);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+  const [authName, setAuthName] = useState("");
+  const [authSex, setAuthSex] = useState<"Male" | "Female" | "">("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [pendingJoin, setPendingJoin] = useState<Trip | null>(null);
 
   const filteredTrips = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return trips;
     return trips.filter((trip) => `${trip.from} ${trip.to} ${trip.meetingPoint}`.toLowerCase().includes(query));
   }, [search, trips]);
+
+  useEffect(() => {
+    fetch("/api/auth/me").then((response) => response.ok ? response.json() : null).then((data) => { if (data?.account) setAccount(data.account); }).catch(() => undefined);
+  }, []);
+
+  const openAuth = (mode: "signin" | "signup", nextTrip?: Trip | null) => {
+    setAuthMode(mode);
+    setPendingJoin(nextTrip || null);
+    setShowAuth(true);
+    setAuthPassword("");
+    if (nextTrip) setJoinTrip(null);
+  };
+
+  const submitAuth = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!authName.trim() || !authPassword || (authMode === "signup" && !authSex)) { toast.error(authMode === "signup" ? "Enter your name, sex, and password" : "Enter your name and password"); return; }
+    setAuthBusy(true);
+    try {
+      const response = await fetch(`/api/auth/${authMode}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fullName: authName.trim(), sex: authSex, password: authPassword }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Authentication failed");
+      setAccount(data.account);
+      setAuthName(""); setAuthSex(""); setAuthPassword(""); setShowAuth(false);
+      if (pendingJoin) { setJoinTrip(pendingJoin); setJoinStage("form"); setGuestName(data.account.fullName); setGuestSex(data.account.sex); setPendingJoin(null); }
+      toast.success(authMode === "signup" ? "Account created" : "Signed in", { description: `Welcome, ${data.account.fullName}.` });
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not sign in"); }
+    finally { setAuthBusy(false); }
+  };
+
+  const signOut = async () => { await fetch("/api/auth/signout", { method: "POST" }); setAccount(null); toast.info("You are signed out"); };
 
   const shareTrip = (trip: Trip) => {
     const joinLink = `${window.location.origin}/?trip=${encodeURIComponent(trip.id)}&data=${encodeTripForLink(trip)}`;
@@ -419,10 +458,11 @@ export default function Home() {
   };
 
   const join = (trip: Trip) => {
+    if (!account) { openAuth("signin", trip); return; }
     setJoinTrip(trip);
     setJoinStage("form");
-    setGuestName("");
-    setGuestSex("");
+    setGuestName(account.fullName);
+    setGuestSex(account.sex);
   };
 
   useEffect(() => {
@@ -486,8 +526,9 @@ export default function Home() {
 
   const createTrip = async (e: FormEvent) => {
     e.preventDefault();
-    if (!form.from || !form.to || !form.date || !form.time || !form.hostSex) {
-      toast.error("Add your route, departure time, and confirm your sex first");
+    if (!account) { openAuth("signin"); return; }
+    if (!form.from || !form.to || !form.date || !form.time) {
+      toast.error("Add your route and departure time first");
       return;
     }
     if (!selectedLocations.from || !selectedLocations.to) {
@@ -496,7 +537,7 @@ export default function Home() {
     }
     let sharedId = `LX-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
     try {
-      const response = await fetch("/api/rides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fromLabel: form.from, toLabel: form.to, toLat: selectedLocations.to.geometry.location.lat, toLng: selectedLocations.to.geometry.location.lng, time: form.time, date: form.date, seats: Number(form.seats), platform: "Passenger arranged", creatorName: "You", creatorSex: form.hostSex }) });
+      const response = await fetch("/api/rides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fromLabel: form.from, toLabel: form.to, toLat: selectedLocations.to.geometry.location.lat, toLng: selectedLocations.to.geometry.location.lng, time: form.time, date: form.date, seats: Number(form.seats), platform: "Passenger arranged", creatorName: account.fullName, creatorSex: account.sex }) });
       if (response.ok) {
         const sharedRide = await response.json();
         sharedId = sharedRide.id || sharedId;
@@ -514,8 +555,8 @@ export default function Home() {
       joined: 1,
       contribution: Number(form.contribution) || 0,
       meetingPoint: "Choose together",
-      host: "You",
-      hostSex: form.hostSex,
+      host: account.fullName,
+      hostSex: account.sex,
       status: "Open",
     };
     setTrips((items) => [trip, ...items]);
@@ -577,7 +618,7 @@ export default function Home() {
             <button className={`nav-link ${view === "trips" ? "nav-active" : ""}`} onClick={() => setView("trips")}>My trips <span className="nav-count">{trips.filter((trip) => trip.host === "You").length}</span></button>
             <button className="nav-link" onClick={() => toast.info("LexRide V1 keeps the basics simple", { description: "Create a trip, share it, and meet in a public place." })}>How it works</button>
           </nav>
-          <button className="button-dark hidden !rounded-xl !px-4 !py-2.5 text-sm md:inline-flex" onClick={() => { setView("create"); setCreatedTrip(null); }}><Plus className="mr-1.5 h-4 w-4" /> Create a trip</button>
+          <div className="hidden items-center gap-2 md:flex">{account ? <><span className="text-xs font-semibold text-slate">{account.fullName} · {account.sex}</span><button className="button-soft !px-3 !py-2 text-xs" onClick={signOut}>Sign out</button></> : <><button className="button-soft !px-3 !py-2 text-sm" onClick={() => openAuth("signin")}>Sign in</button><button className="button-dark !rounded-xl !px-4 !py-2.5 text-sm" onClick={() => openAuth("signup")}>Create account</button></>}<button className="button-dark !rounded-xl !px-4 !py-2.5 text-sm" onClick={() => { if (!account) { openAuth("signin"); return; } setView("create"); setCreatedTrip(null); }}><Plus className="mr-1.5 h-4 w-4" /> Create a trip</button></div>
           <button className="icon-button md:hidden" onClick={() => setView(view === "create" ? "home" : "create")} aria-label="Create trip"><Plus className="h-5 w-5" /></button>
         </div>
       </header>
@@ -622,7 +663,6 @@ export default function Home() {
             <form onSubmit={createTrip} className="form-card mt-8">
               <div className="grid gap-4 md:grid-cols-2"><div><LocationInput label="From · your current location" value={form.from} locked={currentLocationLocked} onChange={(value) => { setCurrentLocationLocked(false); setForm({ ...form, from: value }); setSelectedLocations((locations) => ({ ...locations, from: undefined })); }} onSelect={(place) => { setCurrentLocationLocked(false); setForm({ ...form, from: place.name }); setSelectedLocations((locations) => ({ ...locations, from: place })); }} placeholder={locationLoading ? "Finding your location…" : "Your current location" } /><CurrentLocationButton loading={locationLoading} onClick={useCurrentLocation} />{currentLocationLocked && <button type="button" className="mt-2 text-[10px] font-semibold text-terracotta underline" onClick={() => setCurrentLocationLocked(false)}>Change starting point manually</button>}{locationMessage && <p className="mt-2 rounded-lg bg-[#eef7f0] px-3 py-2 text-[10px] font-semibold text-forest">{locationMessage}</p>}<p className="mt-1 text-[10px] text-slate">Your starting point is detected automatically. Tap the field only if you need to change it.</p></div><LocationInput label="Going to" value={form.to} onChange={(value) => { setForm({ ...form, to: value }); setSelectedLocations((locations) => ({ ...locations, to: undefined })); }} onSelect={(place) => { setForm({ ...form, to: place.name }); setSelectedLocations((locations) => ({ ...locations, to: place })); }} placeholder="e.g. KNUST or Kejetia" /></div>
               <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="field-label">Date<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="field-input" /></label><label className="field-label">Departure time<input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} className="field-input" /></label></div>
-              <fieldset className="mt-4"><legend className="field-label">Your sex <span className="font-normal text-slate">(visible to everyone in this trip)</span></legend><div className="mt-2 grid grid-cols-2 gap-3"><button type="button" onClick={() => setForm({ ...form, hostSex: "Male" })} className={`button-soft justify-center ${form.hostSex === "Male" ? "!border-terracotta !bg-[#fff1eb]" : ""}`}>Male</button><button type="button" onClick={() => setForm({ ...form, hostSex: "Female" })} className={`button-soft justify-center ${form.hostSex === "Female" ? "!border-terracotta !bg-[#fff1eb]" : ""}`}>Female</button></div></fieldset>
               <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="field-label">How many seats? <span className="font-normal text-slate">(including you)</span><select value={form.seats} onChange={(e) => setForm({ ...form, seats: e.target.value })} className="field-input"><option value="2">2 seats</option><option value="3">3 seats</option><option value="4">4 seats</option></select></label><label className="field-label">Target contribution <span className="font-normal text-slate">(GHS / person)</span><input type="number" min="0" value={form.contribution} onChange={(e) => setForm({ ...form, contribution: e.target.value })} placeholder="e.g. 35" className="field-input" /></label></div>
               <RouteMap from={form.from} to={form.to} fromLocation={selectedLocations.from} toLocation={selectedLocations.to} />
               <div className="mt-6 rounded-2xl bg-sand p-4 text-sm text-slate"><div className="flex items-center gap-2 font-semibold text-ink"><MessageCircle className="h-4 w-4 text-terracotta" /> You’ll get a shareable trip link</div><p className="mt-1 pl-6 text-xs leading-5">Share it on WhatsApp, Instagram or anywhere else. The official group stays inside LexRide.</p></div>
@@ -637,7 +677,8 @@ export default function Home() {
       <footer className="mx-auto flex max-w-6xl flex-col gap-3 border-t border-line px-5 py-7 text-xs text-slate sm:flex-row sm:items-center sm:justify-between lg:px-8"><div className="flex items-center gap-2"><div className="brand-mark brand-mark-small"><span>L</span></div><span className="font-semibold text-ink">LexRide</span><span>·</span><span>V1 passenger prototype</span></div><span>Built for simpler journeys across Ghana</span></footer>
 
       {showSheet && <MeetingPointSheet trip={showSheet} onClose={() => setShowSheet(null)} onConfirm={confirmMeetingPoint} />}
-      {joinTrip && <div className="sheet-backdrop" onMouseDown={() => setJoinTrip(null)}><div className="sheet-panel" onMouseDown={(e) => e.stopPropagation()}><div className="flex items-start justify-between"><div><div className="eyebrow">{joinStage === "form" ? "Waiting room" : joinStage === "waiting" ? "Request sent" : "Trip room"}</div><h3 className="mt-1 font-display text-2xl font-bold text-ink">{joinStage === "form" ? "Request to join" : joinStage === "waiting" ? "Waiting for approval" : "You’re approved"}</h3></div><button className="icon-button" onClick={() => setJoinTrip(null)} aria-label="Close"><X className="h-4 w-4" /></button></div><div className="mt-5 rounded-2xl bg-sand p-4"><RouteLine from={joinTrip.from} to={joinTrip.to} /><div className="mt-2 text-xs font-semibold text-slate">Host: {joinTrip.host} ({joinTrip.hostSex || "sex not provided"})</div><div className="mt-3 text-sm text-slate">{joinTrip.date} · {joinTrip.time}</div><div className="mt-1 font-display text-xl font-bold text-ink">About GHS {joinTrip.contribution} / person</div></div>{joinStage === "form" && <><p className="mt-5 text-sm leading-6 text-slate">Enter your details. The person who created this trip must approve you before you can see the group chat.</p><label className="field-label mt-4">Your name<input value={guestName} onChange={(e) => setGuestName(e.target.value)} className="field-input" placeholder="e.g. Yaw Mensah" /></label><fieldset className="mt-4"><legend className="field-label">Confirm your sex</legend><div className="mt-2 grid grid-cols-2 gap-3"><button type="button" onClick={() => setGuestSex("Male")} className={`button-soft justify-center ${guestSex === "Male" ? "!border-terracotta !bg-[#fff1eb]" : ""}`}>Male</button><button type="button" onClick={() => setGuestSex("Female")} className={`button-soft justify-center ${guestSex === "Female" ? "!border-terracotta !bg-[#fff1eb]" : ""}`}>Female</button></div></fieldset><div className="mt-4 flex items-start gap-3 rounded-xl bg-[#e6f0ea] p-3 text-xs leading-5 text-slate"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-forest" /><span>Your details are shown to the trip creator for approval. Meet in public.</span></div><button className="button-primary mt-5 w-full" onClick={submitJoinRequest}>Send join request <ArrowRight className="ml-2 h-4 w-4" /></button></>}{joinStage === "waiting" && <div className="mt-6 rounded-2xl border border-line bg-white p-5 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#fff1eb] text-terracotta"><Clock3 className="h-6 w-6" /></div><h4 className="mt-4 font-display text-xl font-bold text-ink">You’re in the waiting room</h4><p className="mt-2 text-sm leading-6 text-slate">Your name and sex were sent to the trip creator. The chat opens after they accept you.</p><span className="status-pill status-warm mt-4">Waiting for approval</span></div>}{joinStage === "room" && <div className="mt-5"><div className="rounded-xl bg-[#e6f0ea] p-3 text-sm text-slate"><strong className="text-ink">You’re approved.</strong> You can now coordinate with the group.</div><div className="mt-4 max-h-48 space-y-2 overflow-y-auto rounded-2xl border border-line bg-white p-3">{chatMessages.map((message) => <div key={message.id} className={`flex ${message.mine ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${message.mine ? "bg-ink text-white" : "bg-sand text-ink"}`}><div className="mb-0.5 text-[10px] font-bold opacity-60">{message.sender}</div>{message.text}</div></div>)}</div><div className="mt-3 flex gap-2"><input value={chatDraft} onChange={(e) => setChatDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") sendChatMessage(); }} className="field-input" placeholder="Write to the trip group…" /><button type="button" onClick={sendChatMessage} className="button-primary !px-3"><Send className="h-4 w-4" /></button></div></div>}</div></div>}
+      {showAuth && <div className="sheet-backdrop" onMouseDown={() => !authBusy && setShowAuth(false)}><div className="sheet-panel max-w-md" onMouseDown={(event) => event.stopPropagation()}><div className="flex items-start justify-between"><div><div className="eyebrow">LexRide account</div><h3 className="mt-1 font-display text-2xl font-bold text-ink">{authMode === "signup" ? "Create your account" : "Welcome back"}</h3></div><button className="icon-button" onClick={() => setShowAuth(false)} aria-label="Close"><X className="h-4 w-4" /></button></div><p className="mt-3 text-sm leading-6 text-slate">Use your name, sex, and a password. No OTP or email required.</p><form onSubmit={submitAuth} className="mt-5 space-y-4"><label className="field-label">Full name<input className="field-input" value={authName} onChange={(event) => setAuthName(event.target.value)} placeholder="e.g. Yaw Mensah" autoComplete="name" /></label>{authMode === "signup" && <fieldset><legend className="field-label">Your sex <span className="font-normal text-slate">(visible in trips)</span></legend><div className="mt-2 grid grid-cols-2 gap-3"><button type="button" onClick={() => setAuthSex("Male")} className={`button-soft justify-center ${authSex === "Male" ? "!border-terracotta !bg-[#fff1eb]" : ""}`}>Male</button><button type="button" onClick={() => setAuthSex("Female")} className={`button-soft justify-center ${authSex === "Female" ? "!border-terracotta !bg-[#fff1eb]" : ""}`}>Female</button></div></fieldset>}<label className="field-label">Password<input type="password" className="field-input" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} placeholder="At least 6 characters" autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></label><button className="button-primary w-full" disabled={authBusy}>{authBusy ? "Please wait…" : authMode === "signup" ? "Create account" : "Sign in"}</button></form><button className="back-link mx-auto mt-5" onClick={() => setAuthMode(authMode === "signup" ? "signin" : "signup")}>{authMode === "signup" ? "Already have an account? Sign in" : "New to LexRide? Create an account"}</button><p className="mt-4 text-center text-[11px] leading-5 text-slate">Remember your password: without an email or phone number, LexRide cannot reset it yet.</p></div></div>}
+      {joinTrip && <div className="sheet-backdrop" onMouseDown={() => setJoinTrip(null)}><div className="sheet-panel" onMouseDown={(e) => e.stopPropagation()}><div className="flex items-start justify-between"><div><div className="eyebrow">{joinStage === "form" ? "Waiting room" : joinStage === "waiting" ? "Request sent" : "Trip room"}</div><h3 className="mt-1 font-display text-2xl font-bold text-ink">{joinStage === "form" ? "Request to join" : joinStage === "waiting" ? "Waiting for approval" : "You’re approved"}</h3></div><button className="icon-button" onClick={() => setJoinTrip(null)} aria-label="Close"><X className="h-4 w-4" /></button></div><div className="mt-5 rounded-2xl bg-sand p-4"><RouteLine from={joinTrip.from} to={joinTrip.to} /><div className="mt-2 text-xs font-semibold text-slate">Host: {joinTrip.host} ({joinTrip.hostSex || "sex not provided"})</div><div className="mt-3 text-sm text-slate">{joinTrip.date} · {joinTrip.time}</div><div className="mt-1 font-display text-xl font-bold text-ink">About GHS {joinTrip.contribution} / person</div></div>{joinStage === "form" && <><p className="mt-5 text-sm leading-6 text-slate">Enter your details. The person who created this trip must approve you before you can see the group chat.</p><div className="mt-4 rounded-xl bg-sand p-3 text-sm text-slate"><div className="font-semibold text-ink">{account?.fullName}</div><div className="mt-1 text-xs">{account?.sex} · This is visible to the trip group</div></div><div className="mt-4 flex items-start gap-3 rounded-xl bg-[#e6f0ea] p-3 text-xs leading-5 text-slate"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-forest" /><span>Your details are shown to the trip creator for approval. Meet in public.</span></div><button className="button-primary mt-5 w-full" onClick={submitJoinRequest}>Send join request <ArrowRight className="ml-2 h-4 w-4" /></button></>}{joinStage === "waiting" && <div className="mt-6 rounded-2xl border border-line bg-white p-5 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#fff1eb] text-terracotta"><Clock3 className="h-6 w-6" /></div><h4 className="mt-4 font-display text-xl font-bold text-ink">You’re in the waiting room</h4><p className="mt-2 text-sm leading-6 text-slate">Your name and sex were sent to the trip creator. The chat opens after they accept you.</p><span className="status-pill status-warm mt-4">Waiting for approval</span></div>}{joinStage === "room" && <div className="mt-5"><div className="rounded-xl bg-[#e6f0ea] p-3 text-sm text-slate"><strong className="text-ink">You’re approved.</strong> You can now coordinate with the group.</div><div className="mt-4 max-h-48 space-y-2 overflow-y-auto rounded-2xl border border-line bg-white p-3">{chatMessages.map((message) => <div key={message.id} className={`flex ${message.mine ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${message.mine ? "bg-ink text-white" : "bg-sand text-ink"}`}><div className="mb-0.5 text-[10px] font-bold opacity-60">{message.sender}</div>{message.text}</div></div>)}</div><div className="mt-3 flex gap-2"><input value={chatDraft} onChange={(e) => setChatDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") sendChatMessage(); }} className="field-input" placeholder="Write to the trip group…" /><button type="button" onClick={sendChatMessage} className="button-primary !px-3"><Send className="h-4 w-4" /></button></div></div>}</div></div>}
     </div>
   );
 }

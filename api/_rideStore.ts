@@ -62,15 +62,15 @@ type MessageRow = {
   created_at: string;
 };
 
-function getSupabaseConfig() {
+function getSupabaseConfig(admin = false) {
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) throw new Error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables");
+  const key = admin ? process.env.SUPABASE_SERVICE_ROLE_KEY : process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !key) throw new Error(admin ? "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables" : "Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables");
   return { url: url.replace(/\/$/, ""), key };
 }
 
-async function supabaseRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { url, key } = getSupabaseConfig();
+export async function supabaseRequest<T>(path: string, init: RequestInit = {}, admin = false): Promise<T> {
+  const { url, key } = getSupabaseConfig(admin);
   const response = await fetch(`${url}/rest/v1/${path}`, {
     ...init,
     headers: {

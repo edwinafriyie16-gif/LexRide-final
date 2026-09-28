@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { randomBytes } from "crypto";
 import { createRide, getRide, joinRide, addMessage } from "./api/_rideStore.js";
+import { deleteSession, getAccountFromToken, readCookie, signIn, signUp } from "./api/_authStore.js";
 
 interface SharedRideJoiner {
   id: string;
@@ -57,6 +58,35 @@ async function startServer() {
   const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || process.env.GEMINI_API_KEY;
 
   app.use(express.json());
+
+  const sessionCookie = (token: string, maxAge = 2592000) => `lexride_session=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}`;
+  app.post("/api/auth/signup", async (req, res) => {
+    try {
+      const { fullName, sex, password } = req.body || {};
+      if (!fullName || !sex || !password) return res.status(400).json({ error: "Name, sex, and password are required" });
+      if (sex !== "Male" && sex !== "Female") return res.status(400).json({ error: "Sex must be Male or Female" });
+      const result = await signUp(fullName, sex, password);
+      res.setHeader("Set-Cookie", sessionCookie(result.token));
+      return res.status(201).json({ account: result.account });
+    } catch (error) { return res.status(400).json({ error: error instanceof Error ? error.message : "Could not create account" }); }
+  });
+  app.post("/api/auth/signin", async (req, res) => {
+    try {
+      const { fullName, password } = req.body || {};
+      if (!fullName || !password) return res.status(400).json({ error: "Name and password are required" });
+      const result = await signIn(fullName, password);
+      res.setHeader("Set-Cookie", sessionCookie(result.token));
+      return res.json({ account: result.account });
+    } catch (error) { return res.status(401).json({ error: error instanceof Error ? error.message : "Could not sign in" }); }
+  });
+  app.get("/api/auth/me", async (req, res) => {
+    try { return res.json({ account: await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session")) }); }
+    catch (error) { return res.status(500).json({ error: error instanceof Error ? error.message : "Could not read session" }); }
+  });
+  app.post("/api/auth/signout", async (req, res) => {
+    try { await deleteSession(readCookie(req.headers.cookie, "lexride_session")); res.setHeader("Set-Cookie", sessionCookie("", 0)); return res.json({ ok: true }); }
+    catch (error) { return res.status(500).json({ error: error instanceof Error ? error.message : "Could not sign out" }); }
+  });
 
   // Shared rides use the same Supabase-backed store as the Vercel handlers.
   app.post("/api/rides", async (req, res) => {
