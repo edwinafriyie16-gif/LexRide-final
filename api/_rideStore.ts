@@ -43,6 +43,7 @@ type TripRow = {
   platform: string;
   creator_name: string;
   creator_sex: "Male" | "Female" | null;
+  creator_account_id: string | null;
   created_at: string;
 };
 
@@ -52,6 +53,7 @@ type MemberRow = {
   sex: "Male" | "Female";
   status: "Waiting" | "Approved" | "Declined";
   joined_at: string;
+  account_id: string | null;
 };
 
 type MessageRow = {
@@ -134,6 +136,7 @@ export async function createRide(input: {
   platform?: string;
   creatorName: string;
   creatorSex?: "Male" | "Female";
+  creatorAccountId?: string;
 }): Promise<SharedRide> {
   const id = makeId();
   const rows = await supabaseRequest<TripRow[]>("lexride_trip_rooms", {
@@ -151,6 +154,7 @@ export async function createRide(input: {
       platform: input.platform || "Passenger arranged",
       creator_name: input.creatorName,
       creator_sex: input.creatorSex ?? null,
+      creator_account_id: input.creatorAccountId ?? null,
     }),
   });
   const ride = await loadRide(rows[0]?.id || id);
@@ -162,14 +166,14 @@ export async function getRide(id: string): Promise<SharedRide | undefined> {
   return loadRide(id);
 }
 
-export async function joinRide(id: string, firstName: string, sex: "Male" | "Female"): Promise<SharedRide | { error: string; status: number }> {
+export async function joinRide(id: string, firstName: string, sex: "Male" | "Female", accountId?: string): Promise<SharedRide | { error: string; status: number }> {
   const ride = await loadRide(id);
   if (!ride) return { error: "Ride not found", status: 404 };
   if (ride.joined.filter((member) => member.status !== "Declined").length >= ride.seats) return { error: "Ride is full", status: 409 };
   await supabaseRequest<MemberRow[]>("lexride_trip_members", {
     method: "POST",
     headers: { Prefer: "return=representation" },
-    body: JSON.stringify({ trip_id: id, name: firstName.trim().slice(0, 80), sex, status: "Waiting" }),
+    body: JSON.stringify({ trip_id: id, account_id: accountId ?? null, name: firstName.trim().slice(0, 80), sex, status: "Waiting" }),
   });
   await supabaseRequest("lexride_trip_messages", {
     method: "POST",
