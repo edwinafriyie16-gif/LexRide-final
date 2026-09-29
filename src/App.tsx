@@ -542,7 +542,7 @@ export default function Home() {
   const submitJoinRequest = async () => {
     if (!joinTrip || !guestName.trim() || !guestSex) { toast.error("Enter your name and confirm Male or Female first"); return; }
     try {
-      const response = await fetch(`/api/rides/${encodeURIComponent(joinTrip.id)}/join`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ firstName: guestName.trim(), sex: guestSex }) });
+      const response = await fetch("/api/join", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tripId: joinTrip.id, firstName: guestName.trim(), sex: guestSex }) });
       const raw = await response.text();
       let data: any = {};
       try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
