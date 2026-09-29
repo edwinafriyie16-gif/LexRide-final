@@ -22,10 +22,10 @@ export default async function handler(req: any, res: any) {
 
     if (path === "trips" && req.method === "GET") {
       const created = await supabaseRequest<TripRow[]>(`lexride_trip_rooms?creator_account_id=eq.${encodeURIComponent(account.id)}&select=id,from_label,to_label,date,time,seats,creator_name,creator_sex,creator_account_id,created_at&order=created_at.desc&limit=100`, {}, true);
-      const memberships = await supabaseRequest<{ trip_id: string; status: string }[]>(`lexride_trip_members?account_id=eq.${encodeURIComponent(account.id)}&select=trip_id,status&order=joined_at.desc&limit=100`, {}, true);
+      const memberships = await supabaseRequest<{ trip_id: string; status: "Waiting" | "Approved" | "Declined"; joined_at: string }[]>(`lexride_trip_members?account_id=eq.${encodeURIComponent(account.id)}&select=trip_id,status,joined_at&order=joined_at.desc&limit=100`, {}, true);
       const joinedIds = memberships.map((item) => item.trip_id).filter((id) => !created.some((trip) => trip.id === id));
       const joined = joinedIds.length ? await supabaseRequest<TripRow[]>(`lexride_trip_rooms?id=in.(${joinedIds.map(encodeURIComponent).join(",")})&select=id,from_label,to_label,date,time,seats,creator_name,creator_sex,creator_account_id,created_at&order=created_at.desc&limit=100`, {}, true) : [];
-      return res.json({ trips: [...created, ...joined].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((trip) => ({ id: trip.id, from: trip.from_label, to: trip.to_label, date: trip.date || "Shared trip", time: trip.time, seats: trip.seats, host: trip.creator_name, hostSex: trip.creator_sex, role: trip.creator_account_id === account.id ? "created" : "joined" })) });
+      return res.json({ trips: [...created, ...joined].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((trip) => ({ id: trip.id, from: trip.from_label, to: trip.to_label, date: trip.date || "Shared trip", time: trip.time, seats: trip.seats, host: trip.creator_name, hostSex: trip.creator_sex, role: trip.creator_account_id === account.id ? "created" : "joined", requestStatus: trip.creator_account_id === account.id ? undefined : memberships.find((item) => item.trip_id === trip.id)?.status || "Waiting" })) });
     }
 
     if (path === "groups" && req.method === "GET") {
