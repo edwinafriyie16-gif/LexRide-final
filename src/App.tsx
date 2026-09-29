@@ -405,6 +405,9 @@ export default function Home() {
   const [guestRequests, setGuestRequests] = useState<GuestRequest[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([{ id: "welcome", sender: "LexRide", text: "Welcome to the trip room. Agree on a public meeting point here." }]);
   const [chatDraft, setChatDraft] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const chatSendingRef = useRef(false);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState({ from: "", to: "", date: "", time: "", seats: "3", contribution: "", hostSex: "" as "Male" | "Female" | "" });
   const [selectedLocations, setSelectedLocations] = useState<{ from?: LocationSuggestion; to?: LocationSuggestion }>({});
@@ -438,6 +441,12 @@ export default function Home() {
     if (!query) return trips;
     return trips.filter((trip) => `${trip.from} ${trip.to} ${trip.meetingPoint}`.toLowerCase().includes(query));
   }, [search, trips]);
+
+  useEffect(() => {
+    if (view !== "chat") return;
+    const list = chatScrollRef.current;
+    if (list) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+  }, [view, chatMessages]);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -748,15 +757,22 @@ export default function Home() {
   const sendChatMessage = async () => {
     const text = chatDraft.trim();
     const activeTrip = joinTrip || createdTrip;
-    if (!text || !activeTrip) return;
+    if (!text || !activeTrip || chatSendingRef.current) return;
+    chatSendingRef.current = true;
+    setChatSending(true);
     try {
       const response = await fetch("/api/chat-message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tripId: activeTrip.id, text }) });
-      if (!response.ok) throw new Error("Message failed");
-      const ride = await response.json();
+      const ride = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(ride.error || `Message could not be sent (${response.status})`);
+      if (!Array.isArray(ride.messages)) throw new Error("The chat response was incomplete. Refresh the trip and try again.");
       setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
       setChatDraft("");
-    } catch {
-      toast.error("We could not send that message. Please try again.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "We could not send that message. Please try again.";
+      toast.error(message === "Failed to fetch" ? "Connection problem. Your message was not sent. Your draft is still here so you can retry." : `${message} Your draft is still here so you can retry.`);
+    } finally {
+      chatSendingRef.current = false;
+      setChatSending(false);
     }
   };
 
@@ -890,7 +906,7 @@ export default function Home() {
         </div>
       </section>}
 
-      <main className="mx-auto max-w-6xl px-5 pb-16 pt-8 lg:px-8 lg:pt-14">
+      <main className={view === "chat" ? "mx-auto flex w-full max-w-6xl flex-col px-3 pt-2 lg:px-8" : "mx-auto max-w-6xl px-5 pb-16 pt-8 lg:px-8 lg:pt-14"} style={view === "chat" ? { height: "calc(100dvh - 72px)", minHeight: 0 } : undefined}>
         {view === "home" && <>
           <section className="hero-grid">
             <div className="hero-copy">
@@ -939,11 +955,35 @@ export default function Home() {
         </section>}
 
         {view === "chat" && !joinTrip && <section className="py-4 md:py-10"><div className="empty-state mx-auto mt-8 max-w-xl"><MessageCircle className="mx-auto h-8 w-8 text-terracotta" /><h1 className="mt-3 font-display text-2xl font-bold">Trip chat unavailable</h1><p className="mt-2 text-sm leading-6 text-slate">We couldn’t restore this trip room. Open an approved trip from your trips list to continue chatting.</p><button type="button" className="button-primary mt-5" onClick={() => setView("trips")}>Go to My Trips</button></div></section>}
-        {view === "chat" && joinTrip && <section className="py-4 md:py-10"><button className="back-link" onClick={() => { setView("trips"); setJoinTrip(null); }}>← Back to Your trips</button><div className="mt-7 max-w-4xl"><div className="eyebrow">LexRide trip room</div><div className="mt-2 flex flex-wrap items-end justify-between gap-3"><div><h1 className="font-display text-4xl font-bold tracking-[-0.05em]">{joinTrip.from} <span className="text-terracotta">→</span> {joinTrip.to}</h1><p className="mt-2 text-sm text-slate">{joinTrip.date} · {joinTrip.time} · Host: {joinTrip.host} ({joinTrip.hostSex || "sex not provided"})</p></div><span className="status-pill status-green">Approved member</span></div><div className="mt-8 rounded-3xl border border-line bg-white p-4 shadow-sm md:p-6"><div className="flex items-center justify-between border-b border-line pb-4"><div><div className="eyebrow">Group chat</div><h2 className="mt-1 font-display text-2xl font-bold text-ink">Coordinate the journey</h2></div><span className="text-xs text-slate">Keep the meetup public</span></div><div className="mt-5 min-h-[360px] max-h-[55vh] space-y-3 overflow-y-auto rounded-2xl bg-sand p-4">{chatMessages.map((message) => <div key={message.id} className={`flex ${message.mine ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${message.mine ? "bg-ink text-white" : "bg-white text-ink"}`}><div className="mb-1 text-[10px] font-bold opacity-60">{message.sender}</div>{message.text}</div></div>)}{chatMessages.length === 0 && <p className="py-12 text-center text-sm text-slate">No messages yet. Start the conversation.</p>}</div><div className="mt-4 flex gap-2"><input value={chatDraft} onChange={(e) => setChatDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") sendChatMessage(); }} className="field-input" placeholder="Write to the trip group…" /><button type="button" onClick={sendChatMessage} className="button-primary !px-4"><Send className="h-4 w-4" /></button></div></div><div className="mt-4 rounded-2xl bg-[#e6f0ea] p-4 text-sm text-slate"><ShieldCheck className="mr-2 inline h-4 w-4 text-forest" /> Agree on a visible public meeting point before arranging transport.</div></div></section>}
+        {view === "chat" && joinTrip && <section className="flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-center gap-3 border-b border-line pb-3">
+            <button type="button" className="back-link shrink-0" onClick={() => { setView("trips"); setJoinTrip(null); }}>← Trips</button>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate font-display text-base font-bold text-ink sm:text-lg">{joinTrip.from} → {joinTrip.to}</h1>
+              <p className="truncate text-[11px] text-slate">{joinTrip.date} · {joinTrip.time} · {joinTrip.host}</p>
+            </div>
+            <span className="status-pill status-green hidden sm:inline-flex">Approved member</span>
+          </div>
+          <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3 md:px-5">
+              <div><div className="eyebrow">Group chat</div><h2 className="mt-1 font-display text-lg font-bold text-ink">Coordinate the journey</h2></div>
+              <span className="text-right text-[11px] leading-4 text-slate">Meet in a<br className="sm:hidden" /> public place</span>
+            </div>
+            <div ref={chatScrollRef} role="log" aria-live="polite" aria-relevant="additions text" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain bg-sand p-3 md:p-5">
+              {chatMessages.map((message) => <div key={message.id} className={`flex ${message.mine ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] break-words rounded-2xl px-4 py-3 text-sm ${message.mine ? "bg-ink text-white" : "bg-white text-ink shadow-sm"}`}><div className="mb-1 text-[10px] font-bold opacity-60">{message.sender}</div>{message.text}</div></div>)}
+              {chatMessages.length === 0 && <p className="m-auto py-8 text-center text-sm text-slate">No messages yet. Start the conversation.</p>}
+            </div>
+            <form onSubmit={(event) => { event.preventDefault(); void sendChatMessage(); }} className="flex shrink-0 items-center gap-2 border-t border-line bg-white p-3 md:p-4" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
+              <input type="text" value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} disabled={chatSending} autoComplete="off" aria-label="Message to the trip group" className="field-input !mt-0 min-w-0 flex-1" placeholder="Message the trip group…" />
+              <button type="submit" disabled={chatSending || !chatDraft.trim()} aria-label={chatSending ? "Sending message" : "Send message"} className="button-primary h-11 shrink-0 !px-4 disabled:cursor-not-allowed disabled:opacity-50">{chatSending ? <span className="text-xs">Sending…</span> : <Send className="h-4 w-4" />}</button>
+            </form>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5 py-2 text-[10px] text-slate"><ShieldCheck className="h-3.5 w-3.5 text-forest" /> Trip chat is only for the host and approved passengers.</div>
+        </section>}
         {view === "trips" && <section className="py-4 md:py-10"><button type="button" className="back-link mb-4" onClick={() => setView("home")}>← Back to home</button><div className="eyebrow">Your LexRide space</div><h1 className="mt-3 font-display text-4xl font-bold tracking-[-0.05em] md:text-6xl">Your trips.<br /><span className="text-terracotta">Your usual people.</span></h1><p className="mt-4 max-w-xl text-base leading-7 text-slate">See your trip history and keep a regular commute group ready for the journeys you make every day.</p>{!account ? <div className="empty-state mt-8 max-w-2xl"><h3 className="font-display text-xl font-bold">Sign in to see your trips</h3><button className="button-primary mt-4" onClick={() => openAuth("signin")}>Sign in</button></div> : <><div className="mt-8"><div className="section-heading"><div><div className="eyebrow">Trip history</div><h2 className="mt-2 font-display text-2xl font-bold">Your past and upcoming trips</h2></div><span className="status-pill status-green">{historyTrips.length} saved</span></div><div className="mt-4 grid max-w-3xl gap-3">{historyTrips.map((trip) => <div key={trip.id} className="trip-card"><div className="flex items-start justify-between gap-3"><div><RouteLine from={trip.from} to={trip.to} /><div className="mt-3 text-xs text-slate">{trip.date} · {trip.time} · {trip.role === "created" ? "You started this" : "You joined this"}</div></div><span className={`status-pill ${trip.role === "created" || trip.requestStatus === "Approved" ? "status-green" : trip.requestStatus === "Declined" ? "status-full" : "status-warm"}`}>{trip.role === "created" ? "Created" : trip.requestStatus === "Approved" ? "Approved" : trip.requestStatus === "Declined" ? "Declined" : "Waiting"}</span></div><div className="mt-4 flex items-center justify-between"><span className="text-xs text-slate">Host: <strong className="text-ink">{trip.host}</strong></span>{trip.role === "created" || trip.requestStatus !== "Declined" ? <button className="button-soft !px-3 !py-2 text-xs" onClick={() => trip.role === "created" ? openHistoryTrip(trip) : join(trip, trip.requestStatus)}>Open trip</button> : <span className="text-xs font-semibold text-slate">Request closed</span>}</div></div>)}{historyTrips.length === 0 && <div className="empty-state"><h3 className="font-display text-xl font-bold">No trips yet</h3><p className="mt-1 text-sm text-slate">Create a trip or join someone going your way.</p><button className="button-primary mt-4" onClick={() => setView("create")}>Create a trip</button></div>}</div></div><div className="mt-12 max-w-3xl"><div className="section-heading"><div><div className="eyebrow">Sent requests</div><h2 className="mt-2 font-display text-2xl font-bold">Requests you have sent</h2></div><span className="status-pill status-warm">{historyTrips.filter((trip) => trip.role === "joined").length} sent</span></div><p className="mt-3 text-sm leading-6 text-slate">Your join requests stay here after you leave the waiting room. Check whether the trip creator is still reviewing you or has approved you.</p><div className="mt-4 grid gap-3">{historyTrips.filter((trip) => trip.role === "joined").map((trip) => <div key={`request-${trip.id}`} className="trip-card"><div className="flex items-start justify-between gap-3"><div><RouteLine from={trip.from} to={trip.to} /><div className="mt-3 text-xs text-slate">{trip.date} · {trip.time} · Host: {trip.host}</div></div><span className={`status-pill ${trip.requestStatus === "Approved" ? "status-green" : trip.requestStatus === "Declined" ? "status-full" : "status-warm"}`}>{trip.requestStatus || "Waiting"}</span></div>{trip.requestStatus !== "Declined" && <button className="button-soft mt-4 w-full justify-center !px-3 !py-2 text-xs" onClick={() => join(trip, trip.requestStatus)}>{trip.requestStatus === "Approved" ? "Open trip room" : "Open waiting room"}</button>}</div>)}</div></div><div className="mt-12 max-w-3xl"><div className="section-heading"><div><div className="eyebrow">Regular commute groups</div><h2 className="mt-2 font-display text-2xl font-bold">Stop searching every morning.</h2></div><span className="status-pill status-warm">Invite-only</span></div><p className="mt-3 text-sm leading-6 text-slate">Save a route for the people you regularly travel with. Start a fresh trip room each day, so every day has its own approvals, meeting point, and chat.</p><form onSubmit={createCommuteGroup} className="form-card mt-5"><div className="grid gap-4 md:grid-cols-2"><label className="field-label">Group name<input className="field-input" value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="Ayeduase → KNUST crew" /></label><label className="field-label">Usual time<input type="time" className="field-input" value={groupTime} onChange={(e) => setGroupTime(e.target.value)} /></label><label className="field-label">From<input className="field-input" value={groupFrom} onChange={(e) => setGroupFrom(e.target.value)} placeholder="Ayeduase" /></label><label className="field-label">To<input className="field-input" value={groupTo} onChange={(e) => setGroupTo(e.target.value)} placeholder="KNUST" /></label></div><label className="field-label mt-4">Seats including you<select className="field-input" value={groupSeats} onChange={(e) => setGroupSeats(e.target.value)}><option value="2">2 seats</option><option value="3">3 seats</option><option value="4">4 seats</option><option value="5">5 seats</option><option value="6">6 seats</option></select></label><button className="button-primary mt-5 w-full" disabled={groupBusy}>{groupBusy ? "Saving…" : "Create regular group"}</button></form><div className="mt-5 grid gap-3">{commuteGroups.map((group) => <div key={group.id} className="trip-card"><div className="flex items-start justify-between gap-3"><div><div className="eyebrow">{group.name}</div><div className="mt-2 font-display text-xl font-bold text-ink">{group.from_label} → {group.to_label}</div><div className="mt-1 text-xs text-slate">Usually {group.usual_time} · {group.seats} seats · {group.days?.slice(0, 5).join(", ")}</div></div><span className="status-pill status-green">Saved</span></div><div className="mt-4 grid grid-cols-2 gap-2"><button className="button-soft !px-3 !py-2 text-xs" onClick={() => shareCommuteGroup(group)}>Copy invite</button><button className="button-primary !px-3 !py-2 text-xs" onClick={() => startCommuteGroup(group)}>Start today’s trip</button></div></div>)}</div></div></>}</section>}
       </main>
 
-      <footer className="mx-auto flex max-w-6xl flex-col gap-3 border-t border-line px-5 py-7 text-xs text-slate sm:flex-row sm:items-center sm:justify-between lg:px-8"><div className="flex items-center gap-2"><div className="brand-mark brand-mark-small"><span>L</span></div><span className="font-semibold text-ink">LexRide</span><span>·</span><span>V1 passenger prototype</span></div><span>Built for simpler journeys across Ghana</span></footer>
+      {view !== "chat" && <footer className="mx-auto flex max-w-6xl flex-col gap-3 border-t border-line px-5 py-7 text-xs text-slate sm:flex-row sm:items-center sm:justify-between lg:px-8"><div className="flex items-center gap-2"><div className="brand-mark brand-mark-small"><span>L</span></div><span className="font-semibold text-ink">LexRide</span><span>·</span><span>V1 passenger prototype</span></div><span>Built for simpler journeys across Ghana</span></footer>}
 
       {showSheet && <MeetingPointSheet trip={showSheet} onClose={() => setShowSheet(null)} onConfirm={confirmMeetingPoint} />}
       {showProfile && account && <div className="sheet-backdrop" onMouseDown={() => setShowProfile(false)}><div className="sheet-panel max-w-md" onMouseDown={(event) => event.stopPropagation()}><div className="flex items-start justify-between"><div><div className="eyebrow">Your LexRide profile</div><h3 className="mt-1 font-display text-2xl font-bold text-ink">{account.fullName}</h3></div><button className="icon-button" onClick={() => setShowProfile(false)} aria-label="Close profile"><X className="h-4 w-4" /></button></div><div className="mt-6 flex items-center gap-4 rounded-2xl bg-sand p-4"><div className="flex h-14 w-14 items-center justify-center rounded-full bg-ink text-xl font-bold text-white">{account.fullName.slice(0, 1).toUpperCase()}</div><div><div className="text-sm font-bold text-ink">{account.sex}</div><div className="mt-1 text-xs text-slate">Your name and sex are shown in shared trips.</div></div></div><button className="button-primary mt-5 w-full justify-center" onClick={() => { setShowProfile(false); setView("trips"); }}><CalendarDays className="mr-2 h-4 w-4" /> Your trips</button><button className="button-soft mt-3 w-full justify-center" onClick={() => { setShowProfile(false); signOut(); }}><UserRound className="mr-2 h-4 w-4" /> Sign out</button></div></div>}

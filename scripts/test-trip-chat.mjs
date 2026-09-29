@@ -11,6 +11,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
 const trips = [];
 const members = [];
 const messages = [];
+const messageWriteAuthHeaders = [];
 const accounts = new Map([
   ["host-1", { id: "host-1", full_name: "Trip Host", sex: "Male", password_hash: "unused" }],
   ["passenger-1", { id: "passenger-1", full_name: "Approved Passenger", sex: "Female", password_hash: "unused" }],
@@ -68,6 +69,7 @@ globalThis.fetch = async (input, init = {}) => {
   if (table === "lexride_trip_messages") {
     if (method === "GET") return json(messages.filter((row) => matches(row.trip_id, params.get("trip_id"))));
     if (method === "POST") {
+      messageWriteAuthHeaders.push(new Headers(init.headers).get("Authorization"));
       const row = { ...JSON.parse(String(init.body)), id: `message-${messages.length + 1}`, created_at: new Date().toISOString() };
       messages.push(row);
       return json([row], 201);
@@ -165,6 +167,7 @@ assert.equal(allowedSend.headers["cache-control"], "private, no-store", "chat me
 const sentMessage = allowedSend.body.messages.at(-1);
 assert.equal(sentMessage.sender, "Approved Passenger", "message sender comes from the signed-in account, not the request body");
 assert.equal(sentMessage.senderSex, "Female");
+assert.equal(messageWriteAuthHeaders.at(-1), `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, "approved chat messages are persisted with the server role after access checks");
 const anonymousSend = await callChatMessageApi(created.id, undefined, { text: "Anonymous" });
 assert.equal(anonymousSend.statusCode, 401, "anonymous users cannot post to a group");
 console.log("PASS: approval grants chat access; unapproved and anonymous users are blocked");

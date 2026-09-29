@@ -311,6 +311,6 @@ export async function addMessage(id: string, sender: string, text: string, sende
   await supabaseRequest("lexride_trip_messages", {
     method: "POST",
     body: JSON.stringify({ trip_id: id, sender: sender.slice(0, 80), sender_sex: senderSex ?? null, text: trimmed }),
-  });
+  }, true);
   return (await loadRide(id)) as SharedRide;
 }

@@ -21,6 +21,6 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json(result);
   } catch (error) {
     console.error("[Trip chat message] Error:", error);
-    return res.status(500).json({ error: error instanceof Error ? error.message : "Could not send chat message" });
+    return res.status(500).json({ error: "Could not send chat message. Please try again." });
   }
 }
