@@ -3,7 +3,7 @@ import { createRide, supabaseRequest } from "../_rideStore.js";
 
 type GroupRow = { id: string; name: string; from_label: string; to_label: string; usual_time: string; days: string[]; seats: number; owner_account_id: string; created_at: string };
 type TripRow = { id: string; from_label: string; to_label: string; date: string | null; time: string; seats: number; creator_name: string; creator_sex: "Male" | "Female" | null; creator_account_id: string | null; created_at: string };
-type PendingMemberRow = { id: string; trip_id: string; name: string; sex: "Male" | "Female"; status: "Waiting"; joined_at: string };
+type PendingMemberRow = { id: string; trip_id: string; account_id: string | null; name: string; sex: "Male" | "Female"; status: "Waiting" | "Approved"; joined_at: string };
 
 function pathOf(req: any) {
   const value = req.query?.path;
@@ -28,9 +28,15 @@ export default async function handler(req: any, res: any) {
         return res.json({ requests: [] });
       }
       const hostedTripIds = hostedTrips.map((trip) => encodeURIComponent(trip.id)).join(",");
-      const waiting = await supabaseRequest<PendingMemberRow[]>(`lexride_trip_members?trip_id=in.(${hostedTripIds})&status=eq.Waiting&select=id,trip_id,name,sex,status,joined_at&order=joined_at.asc&limit=100`, {}, true);
+      const activeMembers = await supabaseRequest<PendingMemberRow[]>(`lexride_trip_members?trip_id=in.(${hostedTripIds})&status=in.(Waiting,Approved)&select=id,trip_id,account_id,name,sex,status,joined_at&order=joined_at.asc&limit=200`, {}, true);
       const tripById = new Map(hostedTrips.map((trip) => [trip.id, trip]));
-      const requests = waiting.flatMap((member) => {
+      const approvedAccounts = new Set(activeMembers.filter((member) => member.status === "Approved" && member.account_id).map((member) => `${member.trip_id}:${member.account_id}`));
+      const seenRequests = new Set<string>();
+      const requests = activeMembers.flatMap((member) => {
+        if (member.status !== "Waiting") return [];
+        const key = member.account_id ? `${member.trip_id}:${member.account_id}` : `row:${member.id}`;
+        if ((member.account_id && approvedAccounts.has(key)) || seenRequests.has(key)) return [];
+        seenRequests.add(key);
         const trip = tripById.get(member.trip_id);
         return trip ? [{ id: member.id, tripId: trip.id, name: member.name, sex: member.sex, status: member.status, joinedAt: member.joined_at, from: trip.from_label, to: trip.to_label, date: trip.date || "Shared trip", time: trip.time }] : [];
       });
