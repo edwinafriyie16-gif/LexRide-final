@@ -551,8 +551,8 @@ export default function Home() {
       const latest = ride.joined?.find((member: any) => member.firstName === guestName.trim() && member.status === "Waiting");
       setGuestRequests((items) => [...items, { id: latest?.id || `guest-${Date.now()}`, name: guestName.trim(), sex: guestSex, status: "Waiting" }]);
       setJoinStage("waiting");
-    } catch {
-      toast.error("We could not send your join request. Please try again.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "We could not send your join request. Please try again.");
     }
   };
 
