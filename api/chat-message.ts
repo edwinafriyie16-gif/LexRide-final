@@ -1,19 +1,16 @@
-import { addMessage, canAccessTripChat } from "../../_rideStore.js";
-import { getAccountFromToken, readCookie } from "../../_authStore.js";
+import { addMessage, canAccessTripChat } from "./_rideStore.js";
+import { getAccountFromToken, readCookie } from "./_authStore.js";
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const idValue = req.query?.id ?? req.params?.id;
-  const tripId = Array.isArray(idValue) ? String(idValue[0] || "") : String(idValue || "");
-  if (!tripId) return res.status(400).json({ error: "Trip ID is required" });
   res.setHeader("Cache-Control", "private, no-store");
-
   try {
     const account = await getAccountFromToken(readCookie(req.headers?.cookie, "lexride_session"));
     if (!account) return res.status(401).json({ error: "Sign in required" });
 
-    const { text } = req.body || {};
+    const { tripId, text } = req.body || {};
+    if (typeof tripId !== "string" || !tripId.trim()) return res.status(400).json({ error: "Trip ID is required" });
     if (typeof text !== "string" || !text.trim()) return res.status(400).json({ error: "Message is empty" });
     if (!(await canAccessTripChat(tripId, account.id))) {
       return res.status(403).json({ error: "Only the trip host and approved passengers can access this chat" });

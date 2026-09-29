@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { canAccessTripChat, createRide, setMemberStatus } from "../api/_rideStore.ts";
 import rideHandler from "../api/rides/[...path].ts";
-import chatMessageHandler from "../api/rides/[id]/messages.ts";
+import chatMessageHandler from "../api/chat-message.ts";
 
 process.env.SUPABASE_URL = "http://supabase.test";
 process.env.SUPABASE_ANON_KEY = "test-anon-key";
@@ -116,9 +116,9 @@ async function callChatMessageApi(tripId, token, body) {
   };
   await chatMessageHandler({
     method: "POST",
-    query: { id: tripId },
+    query: {},
     headers: { cookie: token ? `lexride_session=${encodeURIComponent(token)}` : "" },
-    body,
+    body: { tripId, ...body },
   }, response);
   return response;
 }
