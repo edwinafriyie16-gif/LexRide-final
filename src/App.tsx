@@ -590,33 +590,37 @@ export default function Home() {
       toast.error("Choose your current location or select both places from the map suggestions");
       return;
     }
-    let sharedId = `LX-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
     try {
-      const response = await fetch("/api/rides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fromLabel: form.from, toLabel: form.to, toLat: selectedLocations.to.geometry.location.lat, toLng: selectedLocations.to.geometry.location.lng, time: form.time, date: form.date, seats: Number(form.seats), platform: "Passenger arranged", creatorName: account.fullName, creatorSex: account.sex }) });
-      if (response.ok) {
-        const sharedRide = await response.json();
-        sharedId = sharedRide.id || sharedId;
-      }
-    } catch {
-      // Keep the local prototype usable if the API is temporarily unavailable.
+      const response = await fetch("/api/create-ride", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fromLabel: form.from, toLabel: form.to, toLat: selectedLocations.to.geometry.location.lat, toLng: selectedLocations.to.geometry.location.lng, time: form.time, date: form.date, seats: Number(form.seats), platform: "Passenger arranged" }) });
+      const raw = await response.text();
+      let data: any = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
+      if (!response.ok) throw new Error(data.error || `Could not create trip (${response.status})`);
+      const sharedRide = data;
+      const sharedId = sharedRide.id;
+      if (!sharedId) throw new Error("Trip was not saved");
+      const trip: Trip = {
+        id: sharedId,
+        from: sharedRide.fromLabel || form.from,
+        to: sharedRide.toLabel || form.to,
+        date: sharedRide.date ? new Date(sharedRide.date).toLocaleDateString("en-GH", { weekday: "short", day: "2-digit", month: "short" }) : new Date(form.date).toLocaleDateString("en-GH", { weekday: "short", day: "2-digit", month: "short" }),
+        time: sharedRide.time || form.time,
+        seats: Number(sharedRide.seats) || Number(form.seats),
+        joined: 1,
+        contribution: Number(form.contribution) || 0,
+        meetingPoint: "Choose together",
+        host: account.fullName,
+        hostSex: account.sex,
+        status: "Open",
+      };
+      setTrips((items) => [trip, ...items]);
+      setCreatedTrip(trip);
+      setHistoryTrips((items) => [{ ...trip, role: "created" as const }, ...items.filter((item) => item.id !== trip.id)]);
+      return;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not create trip");
+      return;
     }
-    const trip: Trip = {
-      id: sharedId,
-      from: form.from,
-      to: form.to,
-      date: new Date(form.date).toLocaleDateString("en-GH", { weekday: "short", day: "2-digit", month: "short" }),
-      time: form.time,
-      seats: Number(form.seats),
-      joined: 1,
-      contribution: Number(form.contribution) || 0,
-      meetingPoint: "Choose together",
-      host: account.fullName,
-      hostSex: account.sex,
-      status: "Open",
-    };
-    setTrips((items) => [trip, ...items]);
-    setCreatedTrip(trip);
-    setHistoryTrips((items) => [{ ...trip, role: "created" as const }, ...items.filter((item) => item.id !== trip.id)]);
   };
 
   const useCurrentLocation = () => {
