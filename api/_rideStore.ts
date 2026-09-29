@@ -169,6 +169,10 @@ export async function getRide(id: string): Promise<SharedRide | undefined> {
 export async function joinRide(id: string, firstName: string, sex: "Male" | "Female", accountId?: string): Promise<SharedRide | { error: string; status: number }> {
   const ride = await loadRide(id);
   if (!ride) return { error: "Ride not found", status: 404 };
+  if (accountId) {
+    const existing = await supabaseRequest<MemberRow[]>(`lexride_trip_members?trip_id=eq.${encodeURIComponent(id)}&account_id=eq.${encodeURIComponent(accountId)}&select=*&order=joined_at.desc&limit=10`, {}, true);
+    if (existing.some((member) => member.status === "Approved" || member.status === "Waiting")) return ride;
+  }
   if (ride.joined.filter((member) => member.status !== "Declined").length >= ride.seats) return { error: "Ride is full", status: 409 };
   await supabaseRequest<MemberRow[]>("lexride_trip_members", {
     method: "POST",

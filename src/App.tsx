@@ -534,11 +534,18 @@ export default function Home() {
       setView("chat");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not load the trip room"); }
   };
-  const join = (trip: Trip, requestStatus?: HistoryTrip["requestStatus"]) => {
+  const join = async (trip: Trip, requestStatus?: HistoryTrip["requestStatus"]) => {
     if (!account) { openAuth("signin", trip); return; }
-    if (requestStatus === "Approved") { openTripChat(trip); return; }
+    let status = requestStatus;
+    if (!status) {
+      try {
+        const response = await fetch("/api/account/trips");
+        if (response.ok) status = (await response.json()).trips?.find((item: any) => item.id === trip.id)?.requestStatus;
+      } catch { /* A public trip without a prior request should show the join form. */ }
+    }
+    if (status === "Approved") { openTripChat(trip); return; }
     setJoinTrip(trip);
-    setJoinStage("form");
+    setJoinStage(status === "Waiting" ? "waiting" : "form");
     setGuestName(account.fullName);
     setGuestSex(account.sex);
   };
