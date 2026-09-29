@@ -145,6 +145,23 @@ async function startServer() {
     }
   });
 
+  app.post("/api/chat-message", async (req, res) => {
+    try {
+      const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
+      if (!account) return res.status(401).json({ error: "Sign in required" });
+      const { tripId, text } = req.body || {};
+      if (typeof tripId !== "string" || !tripId.trim()) return res.status(400).json({ error: "Trip ID is required" });
+      if (typeof text !== "string" || !text.trim()) return res.status(400).json({ error: "Message is empty" });
+      if (!(await canAccessTripChat(tripId, account.id))) return res.status(403).json({ error: "Only the trip host and approved passengers can access this chat" });
+      const result = await addMessage(tripId, account.fullName, text, account.sex);
+      if ("error" in result) return res.status(result.status).json({ error: result.error });
+      return res.json(result);
+    } catch (error) {
+      console.error("[AddMessage] Error:", error);
+      return res.status(500).json({ error: String(error) });
+    }
+  });
+
   // API Proxy for Google Nearby Search (Places API New)
   app.get("/api/nearbysearch", async (req, res) => {
     const { location, radius } = req.query;

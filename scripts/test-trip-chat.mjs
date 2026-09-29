@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { canAccessTripChat, createRide, setMemberStatus } from "../api/_rideStore.ts";
 import rideHandler from "../api/rides/[...path].ts";
+import chatMessageHandler from "../api/chat-message.ts";
 
 process.env.SUPABASE_URL = "http://supabase.test";
 process.env.SUPABASE_ANON_KEY = "test-anon-key";
@@ -104,6 +105,24 @@ async function callRideApi(method, path, token, body) {
   return response;
 }
 
+async function callChatMessageApi(tripId, token, body) {
+  const response = {
+    statusCode: 200,
+    body: undefined,
+    headers: {},
+    status(code) { this.statusCode = code; return this; },
+    setHeader(name, value) { this.headers[name.toLowerCase()] = value; return this; },
+    json(data) { this.body = data; return this; },
+  };
+  await chatMessageHandler({
+    method: "POST",
+    query: {},
+    headers: { cookie: token ? `lexride_session=${encodeURIComponent(token)}` : "" },
+    body: { tripId, ...body },
+  }, response);
+  return response;
+}
+
 const created = await createRide({
   fromLabel: "Apaasi",
   toLabel: "KNUST",
@@ -131,7 +150,7 @@ members.push({
 });
 assert.equal(await canAccessTripChat(created.id, "passenger-1"), false, "waiting passengers are not group members yet");
 assert.equal((await callRideApi("GET", created.id, "passenger-token")).body.messages.length, 0, "waiting passengers cannot read group messages");
-const blockedSend = await callRideApi("POST", `${created.id}/messages`, "passenger-token", { text: "Too early" });
+const blockedSend = await callChatMessageApi(created.id, "passenger-token", { text: "Too early" });
 assert.equal(blockedSend.statusCode, 403, "waiting passengers cannot post to the group");
 
 const approvedRide = await setMemberStatus(created.id, "request-1", "Approved");
@@ -140,12 +159,13 @@ assert.equal(await canAccessTripChat(created.id, "passenger-1"), true, "approval
 const approvedRead = await callRideApi("GET", created.id, "passenger-token");
 assert.equal(approvedRead.headers["cache-control"], "private, no-store", "account-specific group responses are never cached");
 assert.ok(approvedRead.body.messages.some((message) => message.text.includes("Trip group created")), "approved passengers can read existing group history");
-const allowedSend = await callRideApi("POST", `${created.id}/messages`, "passenger-token", { sender: "Spoofed name", text: "Hello group" });
+const allowedSend = await callChatMessageApi(created.id, "passenger-token", { sender: "Spoofed name", text: "Hello group" });
 assert.equal(allowedSend.statusCode, 200, "approved passenger can post");
+assert.equal(allowedSend.headers["cache-control"], "private, no-store", "chat message responses are not cached");
 const sentMessage = allowedSend.body.messages.at(-1);
 assert.equal(sentMessage.sender, "Approved Passenger", "message sender comes from the signed-in account, not the request body");
 assert.equal(sentMessage.senderSex, "Female");
-const anonymousSend = await callRideApi("POST", `${created.id}/messages`, undefined, { text: "Anonymous" });
+const anonymousSend = await callChatMessageApi(created.id, undefined, { text: "Anonymous" });
 assert.equal(anonymousSend.statusCode, 401, "anonymous users cannot post to a group");
 console.log("PASS: approval grants chat access; unapproved and anonymous users are blocked");
 

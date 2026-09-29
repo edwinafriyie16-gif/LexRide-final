@@ -727,7 +727,7 @@ export default function Home() {
     const activeTrip = joinTrip || createdTrip;
     if (!text || !activeTrip) return;
     try {
-      const response = await fetch(`/api/rides/${encodeURIComponent(activeTrip.id)}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+      const response = await fetch("/api/chat-message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tripId: activeTrip.id, text }) });
       if (!response.ok) throw new Error("Message failed");
       const ride = await response.json();
       setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
