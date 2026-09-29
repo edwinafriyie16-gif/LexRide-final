@@ -480,6 +480,38 @@ export default function Home() {
     return () => { stopped = true; window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisibilityChange); };
   }, [account, createdTrip?.id]);
 
+  useEffect(() => {
+    if (!account || joinStage !== "waiting" || !joinTrip) return;
+    let stopped = false;
+    let inFlight = false;
+    const tripId = joinTrip.id;
+    const refreshApproval = async () => {
+      if (stopped || inFlight || document.visibilityState === "hidden") return;
+      inFlight = true;
+      try {
+        const response = await fetch("/api/account/trips", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        const trip = (data.trips || []).find((item: any) => item.id === tripId);
+        if (stopped || trip?.requestStatus !== "Approved") return;
+        const roomResponse = await fetch(`/api/rides/${encodeURIComponent(tripId)}`, { cache: "no-store" });
+        if (!roomResponse.ok) return;
+        const room = await roomResponse.json();
+        if (stopped) return;
+        setHistoryTrips((items) => items.map((item) => item.id === tripId ? { ...item, requestStatus: "Approved" } : item));
+        setChatMessages((room.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account.fullName })));
+        setJoinStage("room");
+        toast.success("You’re approved. The trip group chat is ready.");
+      } catch { /* Retry on the next check while the request is still waiting. */ }
+      finally { inFlight = false; }
+    };
+    void refreshApproval();
+    const interval = window.setInterval(() => { void refreshApproval(); }, 3000);
+    const onVisibilityChange = () => { if (document.visibilityState === "visible") void refreshApproval(); };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => { stopped = true; window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisibilityChange); };
+  }, [account, joinStage, joinTrip?.id]);
+
   const openAuth = (mode: "signin" | "signup", nextTrip?: Trip | null) => {
     setAuthMode(mode);
     setPendingJoin(nextTrip || null);
@@ -528,7 +560,12 @@ export default function Home() {
       toast.success("Today’s trip is ready", { description: `${group.from_label} → ${group.to_label}` });
       setView("home");
       const trip = data.trip ? { id: data.trip.id, from: data.trip.fromLabel, to: data.trip.toLabel, date: data.trip.date || "Today", time: data.trip.time, seats: data.trip.seats, joined: 1, contribution: 0, meetingPoint: "Choose together", host: account?.fullName || "You", hostSex: account?.sex, status: "Open" as const } : null;
-      if (trip) { setTrips((items) => [trip, ...items]); setCreatedTrip(trip); setView("create"); }
+      if (trip) {
+        setTrips((items) => [trip, ...items]);
+        setCreatedTrip(trip);
+        setChatMessages((data.trip.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
+        setView("create");
+      }
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not start today’s trip"); }
   };
   const shareCommuteGroup = (group: CommuteGroup) => {
@@ -545,7 +582,7 @@ export default function Home() {
       setCreatedTrip(restored);
       setJoinTrip(null);
       setGuestRequests((ride.joined || []).filter((member: any) => member.status === "Waiting").map((member: any) => ({ id: member.id, name: member.firstName, sex: member.sex, status: member.status })));
-      setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: false })));
+      setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
       setView("create");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not load this trip"); }
   };
@@ -641,6 +678,7 @@ export default function Home() {
       let data: any = {};
       try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
       if (!response.ok) throw new Error(data.error || "Could not approve passenger");
+      setChatMessages((data.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
       setGuestRequests((items) => items.map((item) => item.id === request.id ? { ...item, status: "Approved" } : item));
       setHostRequests((items) => items.filter((item) => item.id !== request.id));
       setTrips((items) => items.map((item) => item.id === createdTrip.id ? { ...item, joined: Math.min(item.seats, item.joined + 1), status: item.joined + 1 >= item.seats ? "Full" : "Almost full" } : item));
@@ -667,6 +705,7 @@ export default function Home() {
       let data: any = {};
       try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
       if (!response.ok) throw new Error(data.error || `Could not ${status.toLowerCase()} passenger`);
+      if (createdTrip?.id === request.tripId) setChatMessages((data.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
       setHostRequests((items) => items.filter((item) => item.id !== request.id));
       setGuestRequests((items) => items.map((item) => item.id === request.id ? { ...item, status } : item));
       if (status === "Approved") {
@@ -688,10 +727,10 @@ export default function Home() {
     const activeTrip = joinTrip || createdTrip;
     if (!text || !activeTrip) return;
     try {
-      const response = await fetch(`/api/rides/${encodeURIComponent(activeTrip.id)}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sender: "You", senderSex: guestSex || createdTrip?.hostSex, text }) });
+      const response = await fetch(`/api/rides/${encodeURIComponent(activeTrip.id)}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
       if (!response.ok) throw new Error("Message failed");
       const ride = await response.json();
-      setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === "You" })));
+      setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
       setChatDraft("");
     } catch {
       toast.error("We could not send that message. Please try again.");
@@ -734,6 +773,7 @@ export default function Home() {
       };
       setTrips((items) => [trip, ...items]);
       setCreatedTrip(trip);
+      setChatMessages((sharedRide.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account.fullName })));
       setHistoryTrips((items) => [{ ...trip, role: "created" as const }, ...items.filter((item) => item.id !== trip.id)]);
       return;
     } catch (error) {

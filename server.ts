@@ -2,7 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { randomBytes } from "crypto";
-import { createRide, getRide, joinRide, addMessage } from "./api/_rideStore.js";
+import { addMessage, canAccessTripChat, createRide, getRide, joinRide } from "./api/_rideStore.js";
 import { deleteSession, getAccountFromToken, readCookie, signIn, signUp } from "./api/_authStore.js";
 
 interface SharedRideJoiner {
@@ -91,9 +91,11 @@ async function startServer() {
   // Shared rides use the same Supabase-backed store as the Vercel handlers.
   app.post("/api/rides", async (req, res) => {
     try {
-      const { fromLabel, toLabel, toLat, toLng, date, time, seats, platform, creatorName, creatorSex } = req.body || {};
-      if (!fromLabel || !toLabel || !time || !creatorName) return res.status(400).json({ error: "Missing required ride fields" });
-      return res.json(await createRide({ fromLabel, toLabel, toLat, toLng, date, time, seats, platform, creatorName, creatorSex }));
+      const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
+      if (!account) return res.status(401).json({ error: "Sign in required" });
+      const { fromLabel, toLabel, toLat, toLng, date, time, seats, platform } = req.body || {};
+      if (!fromLabel || !toLabel || !time) return res.status(400).json({ error: "Missing required ride fields" });
+      return res.json(await createRide({ fromLabel, toLabel, toLat, toLng, date, time, seats, platform, creatorName: account.fullName, creatorSex: account.sex, creatorAccountId: account.id }));
     } catch (error) {
       console.error("[CreateRide] Error:", error);
       return res.status(500).json({ error: String(error) });
@@ -104,7 +106,10 @@ async function startServer() {
     try {
       const ride = await getRide(req.params.id);
       if (!ride) return res.status(404).json({ error: "Ride not found" });
-      return res.json(ride);
+      res.setHeader("Cache-Control", "private, no-store");
+      const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
+      const canReadChat = account ? await canAccessTripChat(req.params.id, account.id) : false;
+      return res.json(canReadChat ? ride : { ...ride, messages: [] });
     } catch (error) {
       console.error("[GetRide] Error:", error);
       return res.status(500).json({ error: String(error) });
@@ -113,10 +118,9 @@ async function startServer() {
 
   app.post("/api/rides/:id/join", async (req, res) => {
     try {
-      const { firstName, sex } = req.body || {};
-      if (!firstName || !sex) return res.status(400).json({ error: "Missing firstName or sex" });
-      if (sex !== "Male" && sex !== "Female") return res.status(400).json({ error: "Sex must be Male or Female" });
-      const result = await joinRide(req.params.id, firstName, sex);
+      const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
+      if (!account) return res.status(401).json({ error: "Sign in required" });
+      const result = await joinRide(req.params.id, account.fullName, account.sex, account.id);
       if ("error" in result) return res.status(result.status).json({ error: result.error });
       return res.json(result);
     } catch (error) {
@@ -127,9 +131,12 @@ async function startServer() {
 
   app.post("/api/rides/:id/messages", async (req, res) => {
     try {
-      const { sender, senderSex, text } = req.body || {};
-      if (!sender || !text) return res.status(400).json({ error: "Missing sender or text" });
-      const result = await addMessage(req.params.id, sender, text, senderSex);
+      const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
+      if (!account) return res.status(401).json({ error: "Sign in required" });
+      const { text } = req.body || {};
+      if (typeof text !== "string" || !text.trim()) return res.status(400).json({ error: "Message is empty" });
+      if (!(await canAccessTripChat(req.params.id, account.id))) return res.status(403).json({ error: "Only the trip host and approved passengers can access this chat" });
+      const result = await addMessage(req.params.id, account.fullName, text, account.sex);
       if ("error" in result) return res.status(result.status).json({ error: result.error });
       return res.json(result);
     } catch (error) {

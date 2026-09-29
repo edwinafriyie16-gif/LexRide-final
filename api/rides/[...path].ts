@@ -1,4 +1,4 @@
-import { addMessage, createRide, getRide, getRideCreatorAccountId, joinRide, setMemberStatus } from "../_rideStore.js";
+import { addMessage, canAccessTripChat, createRide, getRide, getRideCreatorAccountId, joinRide, setMemberStatus } from "../_rideStore.js";
 import { getAccountFromToken, readCookie } from "../_authStore.js";
 
 function route(req: any) {
@@ -21,7 +21,11 @@ export default async function handler(req: any, res: any) {
     }
     if (parts.length === 1 && req.method === "GET") {
       const ride = await getRide(parts[0]);
-      return ride ? res.status(200).json(ride) : res.status(404).json({ error: "Ride not found" });
+      if (!ride) return res.status(404).json({ error: "Ride not found" });
+      res.setHeader("Cache-Control", "private, no-store");
+      const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
+      const canReadChat = account ? await canAccessTripChat(parts[0], account.id) : false;
+      return res.status(200).json(canReadChat ? ride : { ...ride, messages: [] });
     }
     if (parts.length === 2 && parts[1] === "join" && req.method === "POST") {
       const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
@@ -34,9 +38,12 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json(result);
     }
     if (parts.length === 2 && parts[1] === "messages" && req.method === "POST") {
-      const { sender, senderSex, text } = req.body || {};
-      if (!sender || !text) return res.status(400).json({ error: "Missing sender or text" });
-      const result = await addMessage(parts[0], sender, text, senderSex);
+      const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
+      if (!account) return res.status(401).json({ error: "Sign in required" });
+      const { text } = req.body || {};
+      if (typeof text !== "string" || !text.trim()) return res.status(400).json({ error: "Message is empty" });
+      if (!(await canAccessTripChat(parts[0], account.id))) return res.status(403).json({ error: "Only the trip host and approved passengers can access this chat" });
+      const result = await addMessage(parts[0], account.fullName, text, account.sex);
       if ("error" in result) return res.status(result.status).json({ error: result.error });
       return res.status(200).json(result);
     }
