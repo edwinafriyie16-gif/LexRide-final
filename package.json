@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test:join-idempotency": "node --import tsx scripts/test-join-idempotency.mjs"
+    "test:join-idempotency": "node --import tsx scripts/test-join-idempotency.mjs",
+    "test:trip-chat": "node --import tsx scripts/test-trip-chat.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

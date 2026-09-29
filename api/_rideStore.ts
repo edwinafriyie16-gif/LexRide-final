@@ -178,7 +178,9 @@ export async function createRide(input: {
       creator_account_id: input.creatorAccountId ?? null,
     }),
   });
-  const ride = await loadRide(rows[0]?.id || id);
+  const tripId = rows[0]?.id || id;
+  await recordSystemMessage(tripId, "Trip group created. Approved passengers will be able to join this chat.", true);
+  const ride = await loadRide(tripId);
   if (!ride) throw new Error("Ride was created but could not be loaded");
   return ride;
 }
@@ -194,6 +196,18 @@ export async function getRideCreatorAccountId(id: string): Promise<string | null
     true,
   );
   return rows[0]?.creator_account_id;
+}
+
+export async function canAccessTripChat(id: string, accountId: string): Promise<boolean> {
+  const creatorAccountId = await getRideCreatorAccountId(id);
+  if (creatorAccountId === undefined) return false;
+  if (creatorAccountId === accountId) return true;
+  const approved = await supabaseRequest<Array<{ id: string }>>(
+    `lexride_trip_members?trip_id=eq.${encodeURIComponent(id)}&account_id=eq.${encodeURIComponent(accountId)}&status=eq.Approved&select=id&limit=1`,
+    {},
+    true,
+  );
+  return approved.length > 0;
 }
 
 async function recordSystemMessage(id: string, text: string, admin = true): Promise<void> {
