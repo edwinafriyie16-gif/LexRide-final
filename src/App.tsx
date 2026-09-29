@@ -38,6 +38,7 @@ type Trip = {
 };
 
 type GuestRequest = { id: string; name: string; sex: "Male" | "Female"; status: "Waiting" | "Approved" | "Declined" };
+type HostPendingRequest = GuestRequest & { tripId: string; from: string; to: string; date: string; time: string };
 type ChatMessage = { id: string; sender: string; text: string; mine?: boolean };
 type Account = { id: string; fullName: string; sex: "Male" | "Female" };
 type HistoryTrip = Trip & { role: "created" | "joined"; requestStatus?: "Waiting" | "Approved" | "Declined" };
@@ -419,6 +420,8 @@ export default function Home() {
   const [showProfile, setShowProfile] = useState(false);
   const [historyTrips, setHistoryTrips] = useState<HistoryTrip[]>([]);
   const [commuteGroups, setCommuteGroups] = useState<CommuteGroup[]>([]);
+  const [hostRequests, setHostRequests] = useState<HostPendingRequest[]>([]);
+  const [respondingRequestIds, setRespondingRequestIds] = useState<string[]>([]);
   const [groupName, setGroupName] = useState("");
   const [groupFrom, setGroupFrom] = useState("");
   const [groupTo, setGroupTo] = useState("");
@@ -444,6 +447,36 @@ export default function Home() {
     const groupId = new URLSearchParams(window.location.search).get("group");
     if (groupId) fetch(`/api/account/groups/${encodeURIComponent(groupId)}/join`, { method: "POST" }).then((response) => response.ok ? response.json() : null).then((data) => { if (data?.group) toast.success("You joined the regular commute group", { description: `${data.group.from_label} → ${data.group.to_label}` }); }).catch(() => undefined);
   }, [account]);
+
+  useEffect(() => {
+    if (!account) { setHostRequests([]); return; }
+    let stopped = false;
+    let inFlight = false;
+    const activeTripId = createdTrip?.id;
+    const refreshRequests = async () => {
+      if (stopped || inFlight || document.visibilityState === "hidden") return;
+      inFlight = true;
+      try {
+        const response = await fetch("/api/account/requests", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (stopped) return;
+        const requests = Array.isArray(data.requests) ? data.requests as HostPendingRequest[] : [];
+        setHostRequests(requests);
+        setGuestRequests((current) => {
+          if (!activeTripId) return current;
+          const currentTripWaiting = requests.filter((request) => request.tripId === activeTripId).map(({ id, name, sex, status }) => ({ id, name, sex, status }));
+          return [...current.filter((request) => request.status !== "Waiting"), ...currentTripWaiting];
+        });
+      } catch { /* Keep the last known requests visible during temporary network failures. */ }
+      finally { inFlight = false; }
+    };
+    void refreshRequests();
+    const interval = window.setInterval(() => { void refreshRequests(); }, 3000);
+    const onVisibilityChange = () => { if (document.visibilityState === "visible") void refreshRequests(); };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => { stopped = true; window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisibilityChange); };
+  }, [account, createdTrip?.id]);
 
   const openAuth = (mode: "signin" | "signup", nextTrip?: Trip | null) => {
     setAuthMode(mode);
@@ -598,6 +631,7 @@ export default function Home() {
       try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
       if (!response.ok) throw new Error(data.error || "Could not approve passenger");
       setGuestRequests((items) => items.map((item) => item.id === request.id ? { ...item, status: "Approved" } : item));
+      setHostRequests((items) => items.filter((item) => item.id !== request.id));
       setTrips((items) => items.map((item) => item.id === createdTrip.id ? { ...item, joined: Math.min(item.seats, item.joined + 1), status: item.joined + 1 >= item.seats ? "Full" : "Almost full" } : item));
       toast.success(`${request.name} approved`);
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not approve passenger"); }
@@ -609,7 +643,33 @@ export default function Home() {
       const response = await fetch("/api/member-status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tripId: createdTrip.id, memberId: request.id, status: "Declined" }) });
       if (!response.ok) throw new Error("Could not decline passenger");
       setGuestRequests((items) => items.map((item) => item.id === request.id ? { ...item, status: "Declined" } : item));
+      setHostRequests((items) => items.filter((item) => item.id !== request.id));
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not decline passenger"); }
+  };
+
+  const respondToHostRequest = async (request: HostPendingRequest, status: "Approved" | "Declined") => {
+    if (respondingRequestIds.includes(request.id)) return;
+    setRespondingRequestIds((ids) => [...ids, request.id]);
+    try {
+      const response = await fetch("/api/member-status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tripId: request.tripId, memberId: request.id, status }) });
+      const raw = await response.text();
+      let data: any = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
+      if (!response.ok) throw new Error(data.error || `Could not ${status.toLowerCase()} passenger`);
+      setHostRequests((items) => items.filter((item) => item.id !== request.id));
+      setGuestRequests((items) => items.map((item) => item.id === request.id ? { ...item, status } : item));
+      if (status === "Approved") {
+        const seats = Number(data.seats);
+        const joined = data.joined?.filter((member: any) => member.status !== "Declined").length + 1;
+        if (Number.isFinite(seats) && Number.isFinite(joined)) {
+          const tripStatus = joined >= seats ? "Full" : joined === seats - 1 ? "Almost full" : "Open";
+          setTrips((items) => items.map((trip) => trip.id === request.tripId ? { ...trip, joined: Math.min(seats, joined), status: tripStatus } : trip));
+          setCreatedTrip((trip) => trip?.id === request.tripId ? { ...trip, joined: Math.min(seats, joined), status: tripStatus } : trip);
+        }
+      }
+      toast.success(status === "Approved" ? `${request.name} approved` : `${request.name} declined`);
+    } catch (error) { toast.error(error instanceof Error ? error.message : `Could not ${status.toLowerCase()} passenger`); }
+    finally { setRespondingRequestIds((ids) => ids.filter((id) => id !== request.id)); }
   };
 
   const sendChatMessage = async () => {
@@ -715,6 +775,7 @@ export default function Home() {
     setShowSheet(null);
     toast.success("Meeting point confirmed", { description: point });
   };
+  const visibleHostRequests = hostRequests.filter((request) => view !== "create" || createdTrip?.id !== request.tripId);
 
   return (
     <div className="min-h-screen bg-sand text-ink">
@@ -730,6 +791,30 @@ export default function Home() {
           <div className="flex items-center gap-2 md:hidden">{account && <button className="icon-button !h-10 !w-10 !rounded-full !border-ink !bg-[#182321] !text-white" onClick={() => setShowProfile(true)} aria-label="Open profile"><span className="text-sm font-bold">{account.fullName.slice(0, 1).toUpperCase()}</span></button>}<button className="icon-button" onClick={() => { if (!account) { openAuth("signin"); return; } setView(view === "create" ? "home" : "create"); }} aria-label={account ? "Create trip" : "Sign in to create a trip"}><Plus className="h-5 w-5" /></button></div>
         </div>
       </header>
+
+      {account && visibleHostRequests.length > 0 && <section aria-label="Pending trip requests" aria-live="polite" className="pointer-events-none fixed inset-x-0 top-[76px] z-40 px-3 sm:px-5">
+        <div className="pointer-events-auto mx-auto max-h-[65vh] max-w-xl space-y-2 overflow-y-auto rounded-2xl border border-[#eedab5] bg-[#fff9ed] p-3 shadow-xl">
+          <div className="flex items-center justify-between gap-3 px-1">
+            <div><div className="eyebrow">Trip requests</div><div className="mt-1 font-display text-lg font-bold text-ink">Review passengers</div></div>
+            <span className="status-pill status-warm">{visibleHostRequests.length} waiting</span>
+          </div>
+          {visibleHostRequests.map((request) => <div key={request.id} className="rounded-xl border border-line bg-white p-3 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="avatar">{request.name.slice(0, 1).toUpperCase()}</div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-ink">{request.name} <span className="font-normal text-slate">({request.sex}) wants to join</span></div>
+                <div className="mt-1 truncate text-xs font-semibold text-ink">{request.from} → {request.to}</div>
+                <div className="mt-1 text-[11px] text-slate">{request.date} · {request.time}</div>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button className="button-primary !rounded-xl !px-3 !py-2 text-xs" disabled={respondingRequestIds.includes(request.id)} onClick={() => respondToHostRequest(request, "Approved")}>{respondingRequestIds.includes(request.id) ? "Saving…" : "Approve"}</button>
+              <button className="button-soft !rounded-xl !px-3 !py-2 text-xs" disabled={respondingRequestIds.includes(request.id)} onClick={() => respondToHostRequest(request, "Declined")}>Reject</button>
+            </div>
+          </div>)}
+          <p className="px-1 text-[10px] leading-4 text-slate">New requests refresh automatically while you’re signed in.</p>
+        </div>
+      </section>}
 
       <main className="mx-auto max-w-6xl px-5 pb-16 pt-8 lg:px-8 lg:pt-14">
         {view === "home" && <>

@@ -1,4 +1,4 @@
-import { addMessage, createRide, getRide, joinRide, setMemberStatus } from "../_rideStore.js";
+import { addMessage, createRide, getRide, getRideCreatorAccountId, joinRide, setMemberStatus } from "../_rideStore.js";
 import { getAccountFromToken, readCookie } from "../_authStore.js";
 
 function route(req: any) {
@@ -41,8 +41,13 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json(result);
     }
     if (parts.length === 3 && parts[1] === "members" && req.method === "PATCH") {
+      const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
+      if (!account) return res.status(401).json({ error: "Sign in required" });
       const { status } = req.body || {};
       if (status !== "Approved" && status !== "Declined") return res.status(400).json({ error: "Status must be Approved or Declined" });
+      const creatorAccountId = await getRideCreatorAccountId(parts[0]);
+      if (creatorAccountId === undefined) return res.status(404).json({ error: "Trip not found" });
+      if (creatorAccountId !== account.id) return res.status(403).json({ error: "Only the trip host can manage join requests" });
       const result = await setMemberStatus(parts[0], parts[2], status);
       if ("error" in result) return res.status(result.status).json({ error: result.error });
       return res.status(200).json(result);

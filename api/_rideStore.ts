@@ -166,6 +166,15 @@ export async function getRide(id: string): Promise<SharedRide | undefined> {
   return loadRide(id);
 }
 
+export async function getRideCreatorAccountId(id: string): Promise<string | null | undefined> {
+  const rows = await supabaseRequest<Array<{ creator_account_id: string | null }>>(
+    `lexride_trip_rooms?id=eq.${encodeURIComponent(id)}&select=creator_account_id&limit=1`,
+    {},
+    true,
+  );
+  return rows[0]?.creator_account_id;
+}
+
 export async function joinRide(id: string, firstName: string, sex: "Male" | "Female", accountId?: string): Promise<SharedRide | { error: string; status: number }> {
   const ride = await loadRide(id);
   if (!ride) return { error: "Ride not found", status: 404 };
