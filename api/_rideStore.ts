@@ -189,13 +189,13 @@ export async function setMemberStatus(id: string, memberId: string, status: "App
     method: "PATCH",
     headers: { Prefer: "return=representation" },
     body: JSON.stringify({ status }),
-  });
+  }, true);
   if (!rows.length) return { error: "Member request not found", status: 404 };
   const member = rows[0];
   await supabaseRequest("lexride_trip_messages", {
     method: "POST",
     body: JSON.stringify({ trip_id: id, sender: "LexRide", sender_sex: null, text: `${member.name} was ${status.toLowerCase()}.` }),
-  });
+  }, true);
   return (await loadRide(id)) as SharedRide;
 }
 
