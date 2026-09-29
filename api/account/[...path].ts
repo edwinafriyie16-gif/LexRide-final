@@ -3,6 +3,7 @@ import { createRide, supabaseRequest } from "../_rideStore.js";
 
 type GroupRow = { id: string; name: string; from_label: string; to_label: string; usual_time: string; days: string[]; seats: number; owner_account_id: string; created_at: string };
 type TripRow = { id: string; from_label: string; to_label: string; date: string | null; time: string; seats: number; creator_name: string; creator_sex: "Male" | "Female" | null; creator_account_id: string | null; created_at: string };
+type PendingMemberRow = { id: string; trip_id: string; name: string; sex: "Male" | "Female"; status: "Waiting"; joined_at: string };
 
 function pathOf(req: any) {
   const value = req.query?.path;
@@ -19,6 +20,23 @@ export default async function handler(req: any, res: any) {
   try {
     const account = await currentAccount(req);
     if (!account) return res.status(401).json({ error: "Sign in required" });
+
+    if (path === "requests" && req.method === "GET") {
+      const hostedTrips = await supabaseRequest<TripRow[]>(`lexride_trip_rooms?creator_account_id=eq.${encodeURIComponent(account.id)}&select=id,from_label,to_label,date,time,creator_name,creator_sex,creator_account_id,created_at&order=created_at.desc&limit=100`, {}, true);
+      if (!hostedTrips.length) {
+        res.setHeader("Cache-Control", "private, no-store, max-age=0");
+        return res.json({ requests: [] });
+      }
+      const hostedTripIds = hostedTrips.map((trip) => encodeURIComponent(trip.id)).join(",");
+      const waiting = await supabaseRequest<PendingMemberRow[]>(`lexride_trip_members?trip_id=in.(${hostedTripIds})&status=eq.Waiting&select=id,trip_id,name,sex,status,joined_at&order=joined_at.asc&limit=100`, {}, true);
+      const tripById = new Map(hostedTrips.map((trip) => [trip.id, trip]));
+      const requests = waiting.flatMap((member) => {
+        const trip = tripById.get(member.trip_id);
+        return trip ? [{ id: member.id, tripId: trip.id, name: member.name, sex: member.sex, status: member.status, joinedAt: member.joined_at, from: trip.from_label, to: trip.to_label, date: trip.date || "Shared trip", time: trip.time }] : [];
+      });
+      res.setHeader("Cache-Control", "private, no-store, max-age=0");
+      return res.json({ requests });
+    }
 
     if (path === "trips" && req.method === "GET") {
       const created = await supabaseRequest<TripRow[]>(`lexride_trip_rooms?creator_account_id=eq.${encodeURIComponent(account.id)}&select=id,from_label,to_label,date,time,seats,creator_name,creator_sex,creator_account_id,created_at&order=created_at.desc&limit=100`, {}, true);
