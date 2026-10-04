@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { canAccessTripChat, createRide, setMemberStatus } from "../api/_rideStore.ts";
+import { canAccessTripChat, createRide, joinRide, setMemberStatus, supabaseRequest } from "../api/_rideStore.ts";
 import rideHandler from "../api/rides/[...path].ts";
 import chatMessageHandler from "../api/chat-message.ts";
 
@@ -12,6 +12,7 @@ const trips = [];
 const members = [];
 const messages = [];
 const messageWriteAuthHeaders = [];
+const databaseAuthHeaders = [];
 const accounts = new Map([
   ["host-1", { id: "host-1", full_name: "Trip Host", sex: "Male", password_hash: "unused" }],
   ["passenger-1", { id: "passenger-1", full_name: "Approved Passenger", sex: "Female", password_hash: "unused" }],
@@ -37,6 +38,7 @@ globalThis.fetch = async (input, init = {}) => {
   const table = url.pathname.split("/").pop();
   const params = url.searchParams;
   const method = String(init.method || "GET").toUpperCase();
+  databaseAuthHeaders.push(new Headers(init.headers).get("Authorization"));
 
   if (table === "lexride_trip_rooms") {
     if (method === "POST") {
@@ -151,7 +153,14 @@ members.push({
   joined_at: new Date().toISOString(),
 });
 assert.equal(await canAccessTripChat(created.id, "passenger-1"), false, "waiting passengers are not group members yet");
-assert.equal((await callRideApi("GET", created.id, "passenger-token")).body.messages.length, 0, "waiting passengers cannot read group messages");
+const pendingJoinResponse = await joinRide(created.id, "Approved Passenger", "Female", "passenger-1");
+assert.ok(!("error" in pendingJoinResponse));
+assert.deepEqual(pendingJoinResponse.joined.map((member) => member.id), ["request-1"], "waiting users receive only their own request row");
+assert.deepEqual(pendingJoinResponse.messages, [], "waiting users do not receive chat history in a join response");
+const waitingRead = await callRideApi("GET", created.id, "passenger-token");
+assert.deepEqual(waitingRead.body.joined, [], "waiting passengers cannot enumerate member details");
+assert.equal(waitingRead.body.activeMemberCount, 1, "waiting passengers retain the public occupancy count");
+assert.equal(waitingRead.body.messages.length, 0, "waiting passengers cannot read group messages");
 const blockedSend = await callChatMessageApi(created.id, "passenger-token", { text: "Too early" });
 assert.equal(blockedSend.statusCode, 403, "waiting passengers cannot post to the group");
 
@@ -161,19 +170,32 @@ assert.equal(await canAccessTripChat(created.id, "passenger-1"), true, "approval
 const approvedRead = await callRideApi("GET", created.id, "passenger-token");
 assert.equal(approvedRead.headers["cache-control"], "private, no-store", "account-specific group responses are never cached");
 assert.ok(approvedRead.body.messages.some((message) => message.text.includes("Trip group created")), "approved passengers can read existing group history");
+members.push({ id: "request-2", trip_id: created.id, account_id: "passenger-2", name: "Private Pending Person", sex: "Male", status: "Waiting", joined_at: new Date().toISOString() });
+const approvedReadWithPending = await callRideApi("GET", created.id, "passenger-token");
+assert.deepEqual(approvedReadWithPending.body.joined.map((member) => member.id), ["request-1"], "approved passengers see approved group members but not pending requests");
 const allowedSend = await callChatMessageApi(created.id, "passenger-token", { sender: "Spoofed name", text: "Hello group" });
 assert.equal(allowedSend.statusCode, 200, "approved passenger can post");
 assert.equal(allowedSend.headers["cache-control"], "private, no-store", "chat message responses are not cached");
 const sentMessage = allowedSend.body.messages.at(-1);
 assert.equal(sentMessage.sender, "Approved Passenger", "message sender comes from the signed-in account, not the request body");
-assert.equal(sentMessage.senderSex, "Female");
-assert.equal(messageWriteAuthHeaders.at(-1), `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, "approved chat messages are persisted with the server role after access checks");
-const anonymousSend = await callChatMessageApi(created.id, undefined, { text: "Anonymous" });
+  assert.equal(sentMessage.senderSex, "Female");
+  assert.equal(messageWriteAuthHeaders.at(-1), `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, "approved chat messages are persisted with the server role after access checks");
+  assert.ok(databaseAuthHeaders.every((header) => header === `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`), "all server-side trip queries and writes use the service role");
+  const anonymousSend = await callChatMessageApi(created.id, undefined, { text: "Anonymous" });
 assert.equal(anonymousSend.statusCode, 401, "anonymous users cannot post to a group");
 console.log("PASS: approval grants chat access; unapproved and anonymous users are blocked");
 
 const publicRead = await callRideApi("GET", created.id, undefined);
 assert.deepEqual(publicRead.body.messages, [], "public trip details never expose private group messages");
+assert.deepEqual(publicRead.body.joined, [], "public trip details never expose passenger names or request statuses");
+assert.equal(publicRead.body.activeMemberCount, 2, "public trip details expose only the occupancy count");
 const hostRead = await callRideApi("GET", created.id, "host-token");
 assert.ok(hostRead.body.messages.some((message) => message.text === "Hello group"), "the host can read the group chat");
+assert.ok(hostRead.body.joined.some((member) => member.id === "request-2"), "the host can still see pending requests");
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+await assert.rejects(() => supabaseRequest("lexride_trip_rooms"), /Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY/, "the public anon key is never used as a fallback");
+process.env.SUPABASE_SERVICE_ROLE_KEY = serviceRoleKey;
+assert.ok(databaseAuthHeaders.length > 0 && databaseAuthHeaders.every((header) => header === `Bearer ${serviceRoleKey}`), "all server-side trip and auth queries use the service role");
 console.log("PASS: chat history stays private to the host and approved passengers");
+console.log("PASS: public and pending responses redact member details; only server-role database access is used");

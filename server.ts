@@ -2,7 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { randomBytes } from "crypto";
-import { addMessage, canAccessTripChat, createRide, getRide, joinRide } from "./api/_rideStore.js";
+import { addMessage, canAccessTripChat, createRide, getRide, getTripChatAccess, joinRide, redactApprovedRide, redactPublicRide } from "./api/_rideStore.js";
 import { deleteSession, getAccountFromToken, readCookie, signIn, signUp } from "./api/_authStore.js";
 
 interface SharedRideJoiner {
@@ -108,8 +108,9 @@ async function startServer() {
       if (!ride) return res.status(404).json({ error: "Ride not found" });
       res.setHeader("Cache-Control", "private, no-store");
       const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
-      const canReadChat = account ? await canAccessTripChat(req.params.id, account.id) : false;
-      return res.json(canReadChat ? ride : { ...ride, messages: [] });
+      const access = account ? await getTripChatAccess(req.params.id, account.id) : "none";
+      const responseRide = access === "host" ? ride : access === "approved" ? redactApprovedRide(ride) : redactPublicRide(ride);
+      return res.json(responseRide);
     } catch (error) {
       console.error("[GetRide] Error:", error);
       return res.status(500).json({ error: String(error) });
@@ -122,6 +123,7 @@ async function startServer() {
       if (!account) return res.status(401).json({ error: "Sign in required" });
       const result = await joinRide(req.params.id, account.fullName, account.sex, account.id);
       if ("error" in result) return res.status(result.status).json({ error: result.error });
+      res.setHeader("Cache-Control", "private, no-store");
       return res.json(result);
     } catch (error) {
       console.error("[JoinRide] Error:", error);

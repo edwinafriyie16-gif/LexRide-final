@@ -18,10 +18,9 @@ View your app in AI Studio: https://ai.studio/apps/1e93ec11-a58a-416f-9487-2449a
 2. Set `GEOAPIFY_API_KEY` in [.env.local](.env.local) to your Geoapify key. LexRide uses Geoapify for Ghana place search and estimated driving time, with the local Kumasi directory as a fallback. `GOOGLE_MAPS_API_KEY` and `GEMINI_API_KEY` remain supported as optional fallbacks.
 3. Set the existing LexRide Supabase project credentials in the local environment and in Vercel:
    - `SUPABASE_URL=https://cyksgpuhtbxuggipcwtj.supabase.co`
-   - `SUPABASE_ANON_KEY=<the project's public anon/publishable key>`
    - `SUPABASE_SERVICE_ROLE_KEY=<the project's service-role key; server-only, never expose it in the browser>`
 
-The API now stores shared trips, join requests, approvals, and trip-room messages in the existing Supabase LexRide project. The database migration `add_lexride_trip_rooms` creates the `lexride_trip_rooms`, `lexride_trip_members`, and `lexride_trip_messages` tables. Do not commit `.env.local` or any secret key.
+The server-side API stores shared trips, join requests, approvals, and trip-room messages in the existing Supabase LexRide project. Browser code must never connect directly to Supabase; all database requests use the server-only service-role key after the API authenticates and authorizes the request. The database migration `add_lexride_trip_rooms` creates the `lexride_trip_rooms`, `lexride_trip_members`, and `lexride_trip_messages` tables. Do not commit `.env.local` or any secret key.
 
 LexRide accounts use the requested no-OTP flow: full name, sex, and password at sign-up; full name and password at sign-in. Passwords are scrypt-hashed on the server, and the browser receives an HTTP-only session cookie. Multiple accounts may use the same name because the password distinguishes them. Account and session tables are server-only; the service-role key is required for auth endpoints. Password recovery is not available until an email or phone recovery method is added.
 

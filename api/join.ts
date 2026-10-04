@@ -11,6 +11,7 @@ export default async function handler(req: any, res: any) {
     if (sex !== "Male" && sex !== "Female") return res.status(400).json({ error: "Sex must be Male or Female" });
     const result = await joinRide(String(tripId), String(firstName), sex, account.id);
     if ("error" in result) return res.status(result.status).json({ error: result.error });
+    res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(result);
   } catch (error) {
     console.error("[Join] Error:", error);
