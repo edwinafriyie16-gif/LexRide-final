@@ -1,5 +1,5 @@
 import { getAccountFromToken, readCookie } from "./_authStore.js";
-import { getRideCreatorAccountId, setMemberStatus } from "./_rideStore.js";
+import { getRideCreatorAccountId, setMemberStatus, setRideLifecycleStatus } from "./_rideStore.js";
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "PATCH") return res.status(405).json({ error: "Method not allowed" });
@@ -7,7 +7,14 @@ export default async function handler(req: any, res: any) {
     const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
     if (!account) return res.status(401).json({ error: "Sign in required" });
     const { tripId, memberId, status } = req.body || {};
-    if (!tripId || !memberId || (status !== "Approved" && status !== "Declined")) return res.status(400).json({ error: "Missing trip, member, or valid status" });
+    if (!tripId) return res.status(400).json({ error: "Trip ID is required" });
+    if (status === "Finished" || status === "Cancelled") {
+      const result = await setRideLifecycleStatus(String(tripId), account.id, status);
+      if ("error" in result) return res.status(result.status).json({ error: result.error });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(result);
+    }
+    if (!memberId || (status !== "Approved" && status !== "Declined")) return res.status(400).json({ error: "Missing member or valid status" });
     const creatorAccountId = await getRideCreatorAccountId(String(tripId));
     if (creatorAccountId === undefined) return res.status(404).json({ error: "Trip not found" });
     if (creatorAccountId !== account.id) return res.status(403).json({ error: "Only the trip host can manage join requests" });
