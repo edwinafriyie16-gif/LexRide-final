@@ -30,6 +30,7 @@ export interface SharedRide {
   creatorSex?: "Male" | "Female";
   createdAt: number;
   joined: SharedRideJoiner[];
+  activeMemberCount?: number;
   messages: ChatMessage[];
 }
 
@@ -64,17 +65,19 @@ type MessageRow = {
   sender_sex: "Male" | "Female" | null;
   text: string;
   created_at: string;
-};
+}
 
-function getSupabaseConfig(admin = false) {
+// This module is server-only. API handlers authenticate and authorize each
+// operation; database traffic must never fall back to the public anon key.
+function getSupabaseConfig() {
   const url = process.env.SUPABASE_URL;
-  const key = admin ? process.env.SUPABASE_SERVICE_ROLE_KEY : process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) throw new Error(admin ? "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables" : "Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables");
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables");
   return { url: url.replace(/\/$/, ""), key };
 }
 
-export async function supabaseRequest<T>(path: string, init: RequestInit = {}, admin = false): Promise<T> {
-  const { url, key } = getSupabaseConfig(admin);
+export async function supabaseRequest<T>(path: string, init: RequestInit = {}, _legacyAdminFlag?: boolean): Promise<T> {
+  const { url, key } = getSupabaseConfig();
   const response = await fetch(`${url}/rest/v1/${path}`, {
     ...init,
     headers: {
@@ -198,16 +201,46 @@ export async function getRideCreatorAccountId(id: string): Promise<string | null
   return rows[0]?.creator_account_id;
 }
 
-export async function canAccessTripChat(id: string, accountId: string): Promise<boolean> {
+export async function getTripChatAccess(id: string, accountId: string): Promise<"host" | "approved" | "none"> {
   const creatorAccountId = await getRideCreatorAccountId(id);
-  if (creatorAccountId === undefined) return false;
-  if (creatorAccountId === accountId) return true;
+  if (creatorAccountId === undefined) return "none";
+  if (creatorAccountId === accountId) return "host";
   const approved = await supabaseRequest<Array<{ id: string }>>(
     `lexride_trip_members?trip_id=eq.${encodeURIComponent(id)}&account_id=eq.${encodeURIComponent(accountId)}&status=eq.Approved&select=id&limit=1`,
     {},
     true,
   );
-  return approved.length > 0;
+  return approved.length > 0 ? "approved" : "none";
+}
+
+export async function canAccessTripChat(id: string, accountId: string): Promise<boolean> {
+  return (await getTripChatAccess(id, accountId)) !== "none";
+}
+
+export function redactPublicRide(ride: SharedRide): SharedRide {
+  return {
+    ...ride,
+    joined: [],
+    activeMemberCount: ride.joined.filter((member) => member.status !== "Declined").length,
+    messages: [],
+  };
+}
+
+export function redactApprovedRide(ride: SharedRide): SharedRide {
+  return {
+    ...ride,
+    joined: ride.joined.filter((member) => member.status === "Approved"),
+    activeMemberCount: ride.joined.filter((member) => member.status !== "Declined").length,
+  };
+}
+
+function pendingJoinResponse(ride: SharedRide, memberId: string): SharedRide {
+  return {
+    ...ride,
+    joined: ride.joined.filter((member) => member.id === memberId),
+    activeMemberCount: ride.joined.filter((member) => member.status !== "Declined").length,
+    messages: [],
+  };
 }
 
 async function recordSystemMessage(id: string, text: string, admin = true): Promise<void> {
@@ -227,7 +260,9 @@ export async function joinRide(id: string, firstName: string, sex: "Male" | "Fem
   const name = firstName.trim().slice(0, 80);
   if (accountId) {
     const existing = await supabaseRequest<MemberRow[]>(`lexride_trip_members?trip_id=eq.${encodeURIComponent(id)}&account_id=eq.${encodeURIComponent(accountId)}&select=*&order=joined_at.desc&limit=100`, {}, true);
-    if (existing.some((member) => member.status === "Approved" || member.status === "Waiting")) return ride;
+    const activeMembership = existing.find((member) => member.status === "Approved" || member.status === "Waiting");
+    if (activeMembership?.status === "Approved") return ride;
+    if (activeMembership?.status === "Waiting") return pendingJoinResponse(ride, activeMembership.id);
     const declined = existing.find((member) => member.status === "Declined");
     if (declined) {
       const reactivated = await supabaseRequest<MemberRow[]>(`lexride_trip_members?id=eq.${encodeURIComponent(declined.id)}&trip_id=eq.${encodeURIComponent(id)}&status=eq.Declined`, {
@@ -235,9 +270,9 @@ export async function joinRide(id: string, firstName: string, sex: "Male" | "Fem
         headers: { Prefer: "return=representation" },
         body: JSON.stringify({ name, sex, status: "Waiting" }),
       }, true);
-      if (!reactivated.length) return (await loadRide(id)) || ride;
+      if (!reactivated.length) return pendingJoinResponse((await loadRide(id)) || ride, declined.id);
       await recordSystemMessage(id, `${name} requested to join the trip again.`, true);
-      return (await loadRide(id)) || ride;
+      return pendingJoinResponse((await loadRide(id)) || ride, declined.id);
     }
   }
   if (ride.joined.filter((member) => member.status !== "Declined").length >= ride.seats) return { error: "Ride is full", status: 409 };
@@ -249,10 +284,10 @@ export async function joinRide(id: string, firstName: string, sex: "Male" | "Fem
   }, Boolean(accountId));
   if (inserted?.length) await recordSystemMessage(id, `${name} requested to join the trip.`, Boolean(accountId));
   const member = inserted?.[0] || (memberId ? { id: memberId, name, sex, status: "Waiting" as const, joined_at: new Date().toISOString(), account_id: accountId } : undefined);
-  if (!member) return (await loadRide(id)) || ride;
+  if (!member) return redactPublicRide((await loadRide(id)) || ride);
   const joined = ride.joined.filter((item) => item.id !== member.id);
   joined.push({ id: member.id, firstName: member.name, sex: member.sex, status: member.status, joinedAt: new Date(member.joined_at).getTime() });
-  return { ...ride, joined };
+  return pendingJoinResponse({ ...ride, joined }, member.id);
 }
 
 export async function setMemberStatus(id: string, memberId: string, status: "Approved" | "Declined"): Promise<SharedRide | { error: string; status: number }> {

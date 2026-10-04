@@ -607,7 +607,7 @@ export default function Home() {
       const response = await fetch(`/api/rides/${encodeURIComponent(historyTrip.id)}`);
       const ride = await response.json();
       if (!response.ok) throw new Error(ride.error || "Could not load this trip");
-      const restored: Trip = { id: ride.id, from: ride.fromLabel, to: ride.toLabel, date: ride.date || historyTrip.date, time: ride.time, seats: Number(ride.seats) || historyTrip.seats, joined: ride.joined?.filter((member: any) => member.status !== "Declined").length + 1 || 1, contribution: historyTrip.contribution || 0, meetingPoint: historyTrip.meetingPoint || "Choose together", host: ride.creatorName || historyTrip.host, hostSex: ride.creatorSex || historyTrip.hostSex, status: "Open" };
+      const restored: Trip = { id: ride.id, from: ride.fromLabel, to: ride.toLabel, date: ride.date || historyTrip.date, time: ride.time, seats: Number(ride.seats) || historyTrip.seats, joined: (Number(ride.activeMemberCount ?? ride.joined?.filter((member: any) => member.status !== "Declined").length) || 0) + 1, contribution: historyTrip.contribution || 0, meetingPoint: historyTrip.meetingPoint || "Choose together", host: ride.creatorName || historyTrip.host, hostSex: ride.creatorSex || historyTrip.hostSex, status: "Open" };
       setCreatedTrip(restored);
       setJoinTrip(null);
       setGuestRequests((ride.joined || []).filter((member: any) => member.status === "Waiting").map((member: any) => ({ id: member.id, name: member.firstName, sex: member.sex, status: member.status })));
@@ -628,7 +628,7 @@ export default function Home() {
       const response = await fetch(`/api/rides/${encodeURIComponent(trip.id)}`);
       const ride = await response.json();
       if (!response.ok) throw new Error(ride.error || "Could not load the trip room");
-      const restored: Trip = { ...trip, id: ride.id, from: ride.fromLabel, to: ride.toLabel, date: ride.date || trip.date, time: ride.time, seats: Number(ride.seats) || trip.seats, joined: ride.joined?.filter((member: any) => member.status !== "Declined").length + 1 || trip.joined, host: ride.creatorName || trip.host, hostSex: ride.creatorSex || trip.hostSex };
+      const restored: Trip = { ...trip, id: ride.id, from: ride.fromLabel, to: ride.toLabel, date: ride.date || trip.date, time: ride.time, seats: Number(ride.seats) || trip.seats, joined: (Number(ride.activeMemberCount ?? ride.joined?.filter((member: any) => member.status !== "Declined").length) || 0) + 1, host: ride.creatorName || trip.host, hostSex: ride.creatorSex || trip.hostSex };
       setJoinTrip(restored);
       setCreatedTrip(null);
       setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
@@ -669,7 +669,7 @@ export default function Home() {
     let cancelled = false;
     fetch(`/api/rides/${encodeURIComponent(tripId)}`).then((response) => response.ok ? response.json() : null).then((ride) => {
       if (cancelled || !ride) return;
-      const sharedTrip: Trip = { id: ride.id, from: ride.fromLabel, to: ride.toLabel, date: ride.date || "Shared trip", time: ride.time, seats: Number(ride.seats) || 3, joined: ride.joined?.filter((member: any) => member.status !== "Declined").length + 1 || 1, contribution: 0, meetingPoint: "Choose together", host: ride.creatorName || "Trip creator", hostSex: ride.creatorSex, status: "Open" };
+      const sharedTrip: Trip = { id: ride.id, from: ride.fromLabel, to: ride.toLabel, date: ride.date || "Shared trip", time: ride.time, seats: Number(ride.seats) || 3, joined: (Number(ride.activeMemberCount ?? ride.joined?.filter((member: any) => member.status !== "Declined").length) || 0) + 1, contribution: 0, meetingPoint: "Choose together", host: ride.creatorName || "Trip creator", hostSex: ride.creatorSex, status: "Open" };
       setTrips((items) => items.some((item) => item.id === sharedTrip.id) ? items : [sharedTrip, ...items]);
       join(sharedTrip);
     }).catch(() => undefined);

@@ -28,6 +28,7 @@ let releaseLookups;
 let lookupBarrier = new Promise((resolve) => { releaseLookups = resolve; });
 let forceConcurrentLookup = false;
 let failSystemMessages = false;
+const databaseAuthHeaders = [];
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -44,6 +45,7 @@ globalThis.fetch = async (input, init = {}) => {
   const table = url.pathname.split("/").pop();
   const params = url.searchParams;
   const method = String(init.method || "GET").toUpperCase();
+  databaseAuthHeaders.push(new Headers(init.headers).get("Authorization"));
 
   if (table === "lexride_trip_rooms") return json([trip]);
 
@@ -112,6 +114,12 @@ assert.equal(members.length, 1, "rapid duplicate taps create one membership row"
 assert.match(members[0].id, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
 assert.equal(messages.length, 1, "duplicate retry records only one join activity message");
 assert.ok(concurrent.every((ride) => !("error" in ride) && ride.joined.length === 1), "both taps return a consistent waiting result");
+assert.ok(concurrent.every((ride) => ride.messages.length === 0), "waiting join responses do not include chat history");
+members.push({ id: "other-pending", trip_id: "LX-TEST", account_id: "passenger-2", name: "Another Passenger", sex: "Female", status: "Waiting", joined_at: new Date().toISOString() });
+const ownRetry = await joinRide("LX-TEST", "Yaw Mensah", "Male", "passenger-1");
+assert.ok(!("error" in ownRetry));
+assert.deepEqual(ownRetry.joined.map((member) => member.id), [members.find((row) => row.account_id === "passenger-1").id], "a pending member sees only their own request row");
+assert.equal(ownRetry.messages.length, 0);
 console.log("PASS: concurrent repeated join creates one request and one system message");
 
 forceConcurrentLookup = false;
@@ -164,3 +172,10 @@ assert.ok(!("error" in retried));
 assert.equal(members.length, 1, "retry after a decline reuses the prior membership row");
 assert.equal(members[0].status, "Waiting");
 console.log("PASS: a re-request after decline reactivates one existing row");
+
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+await assert.rejects(() => joinRide("LX-TEST", "No fallback", "Male", "passenger-5"), /Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY/, "the public anon key is never used as a fallback");
+process.env.SUPABASE_SERVICE_ROLE_KEY = serviceRoleKey;
+assert.ok(databaseAuthHeaders.length > 0 && databaseAuthHeaders.every((header) => header === `Bearer ${serviceRoleKey}`), "all join and membership queries use the service role");
+console.log("PASS: join request rows are private and all database calls use the server role");
