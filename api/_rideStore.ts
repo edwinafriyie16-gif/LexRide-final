@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+export type TripLifecycleStatus = "Open" | "Finished" | "Cancelled";
+
 export interface SharedRideJoiner {
   id: string;
   firstName: string;
@@ -29,6 +31,7 @@ export interface SharedRide {
   creatorName: string;
   creatorSex?: "Male" | "Female";
   createdAt: number;
+  lifecycleStatus: TripLifecycleStatus;
   joined: SharedRideJoiner[];
   activeMemberCount?: number;
   messages: ChatMessage[];
@@ -48,6 +51,7 @@ type TripRow = {
   creator_sex: "Male" | "Female" | null;
   creator_account_id: string | null;
   created_at: string;
+  lifecycle_status: TripLifecycleStatus;
 };
 
 type MemberRow = {
@@ -133,6 +137,7 @@ function toRide(trip: TripRow, members: MemberRow[], messages: MessageRow[]): Sh
     creatorName: trip.creator_name,
     creatorSex: trip.creator_sex ?? undefined,
     createdAt: new Date(trip.created_at).getTime(),
+    lifecycleStatus: trip.lifecycle_status || "Open",
     joined: deduplicateMembers(members).map((member) => ({ id: member.id, firstName: member.name, sex: member.sex, status: member.status, joinedAt: new Date(member.joined_at).getTime() })),
     messages: messages.map((message) => ({ id: message.id, sender: message.sender, senderSex: message.sender_sex ?? undefined, text: message.text, createdAt: new Date(message.created_at).getTime() })),
   };
@@ -201,6 +206,42 @@ export async function getRideCreatorAccountId(id: string): Promise<string | null
   return rows[0]?.creator_account_id;
 }
 
+export async function setRideLifecycleStatus(id: string, accountId: string, status: Exclude<TripLifecycleStatus, "Open">): Promise<SharedRide | { error: string; status: number }> {
+  const currentRows = await supabaseRequest<Array<Pick<TripRow, "id" | "creator_account_id" | "lifecycle_status">>>(
+    `lexride_trip_rooms?id=eq.${encodeURIComponent(id)}&select=id,creator_account_id,lifecycle_status&limit=1`,
+    {},
+    true,
+  );
+  const current = currentRows[0];
+  if (!current) return { error: "Trip not found", status: 404 };
+  if (current.creator_account_id !== accountId) return { error: "Only the trip host can change trip status", status: 403 };
+  if (current.lifecycle_status === status) {
+    const ride = await loadRide(id);
+    return ride || { error: "Trip not found", status: 404 };
+  }
+  if (current.lifecycle_status !== "Open") return { error: `This trip is already ${current.lifecycle_status.toLowerCase()}`, status: 409 };
+
+  const updated = await supabaseRequest<Array<{ id: string }>>(
+    `lexride_trip_rooms?id=eq.${encodeURIComponent(id)}&creator_account_id=eq.${encodeURIComponent(accountId)}&lifecycle_status=eq.Open&select=id&limit=1`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ lifecycle_status: status }),
+    },
+    true,
+  );
+  if (!updated.length) {
+    const latest = await supabaseRequest<Array<{ lifecycle_status: TripLifecycleStatus }>>(
+      `lexride_trip_rooms?id=eq.${encodeURIComponent(id)}&select=lifecycle_status&limit=1`,
+      {},
+      true,
+    );
+    if (latest[0]?.lifecycle_status !== status) return { error: "The trip status changed before this action could be saved", status: 409 };
+  }
+  const ride = await loadRide(id);
+  return ride || { error: "Trip not found", status: 404 };
+}
+
 export async function getTripChatAccess(id: string, accountId: string): Promise<"host" | "approved" | "none"> {
   const creatorAccountId = await getRideCreatorAccountId(id);
   if (creatorAccountId === undefined) return "none";
@@ -257,6 +298,7 @@ async function recordSystemMessage(id: string, text: string, admin = true): Prom
 export async function joinRide(id: string, firstName: string, sex: "Male" | "Female", accountId?: string): Promise<SharedRide | { error: string; status: number }> {
   const ride = await loadRide(id);
   if (!ride) return { error: "Ride not found", status: 404 };
+  if (ride.lifecycleStatus !== "Open") return { error: `This trip is ${ride.lifecycleStatus.toLowerCase()} and is no longer accepting requests`, status: 409 };
   const name = firstName.trim().slice(0, 80);
   if (accountId) {
     const existing = await supabaseRequest<MemberRow[]>(`lexride_trip_members?trip_id=eq.${encodeURIComponent(id)}&account_id=eq.${encodeURIComponent(accountId)}&select=*&order=joined_at.desc&limit=100`, {}, true);
@@ -293,6 +335,7 @@ export async function joinRide(id: string, firstName: string, sex: "Male" | "Fem
 export async function setMemberStatus(id: string, memberId: string, status: "Approved" | "Declined"): Promise<SharedRide | { error: string; status: number }> {
   const ride = await loadRide(id);
   if (!ride) return { error: "Ride not found", status: 404 };
+  if (ride.lifecycleStatus !== "Open") return { error: `This trip is ${ride.lifecycleStatus.toLowerCase()} and no longer accepting request changes`, status: 409 };
   const selected = await supabaseRequest<MemberRow[]>(`lexride_trip_members?id=eq.${encodeURIComponent(memberId)}&trip_id=eq.${encodeURIComponent(id)}&select=*&limit=1`, {}, true);
   const member = selected[0];
   if (!member) return { error: "Member request not found", status: 404 };
@@ -341,6 +384,7 @@ export async function setMemberStatus(id: string, memberId: string, status: "App
 export async function addMessage(id: string, sender: string, text: string, senderSex?: "Male" | "Female"): Promise<SharedRide | { error: string; status: number }> {
   const ride = await loadRide(id);
   if (!ride) return { error: "Ride not found", status: 404 };
+  if (ride.lifecycleStatus !== "Open") return { error: `This trip is ${ride.lifecycleStatus.toLowerCase()}; its chat is read-only`, status: 409 };
   const trimmed = text.trim().slice(0, 500);
   if (!trimmed) return { error: "Message is empty", status: 400 };
   await supabaseRequest("lexride_trip_messages", {

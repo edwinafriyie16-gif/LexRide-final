@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { canAccessTripChat, createRide, joinRide, setMemberStatus, supabaseRequest } from "../api/_rideStore.ts";
+import { addMessage, canAccessTripChat, createRide, joinRide, setMemberStatus, supabaseRequest } from "../api/_rideStore.ts";
 import rideHandler from "../api/rides/[...path].ts";
 import chatMessageHandler from "../api/chat-message.ts";
+import memberStatusHandler from "../api/member-status.ts";
 
 process.env.SUPABASE_URL = "http://supabase.test";
 process.env.SUPABASE_ANON_KEY = "test-anon-key";
@@ -43,9 +44,15 @@ globalThis.fetch = async (input, init = {}) => {
   if (table === "lexride_trip_rooms") {
     if (method === "POST") {
       const body = JSON.parse(String(init.body));
-      const row = { ...body, created_at: new Date().toISOString() };
+      const row = { lifecycle_status: "Open", ...body, created_at: new Date().toISOString() };
       trips.push(row);
       return json([row], 201);
+    }
+    if (method === "PATCH") {
+      const patch = JSON.parse(String(init.body));
+      const selected = trips.filter((row) => matchesRow(row, params, ["id", "creator_account_id", "lifecycle_status"]));
+      for (const row of selected) Object.assign(row, patch);
+      return json(selected);
     }
     const selected = trips.filter((row) => matchesRow(row, params, ["id", "creator_account_id"]));
     return json(selected);
@@ -127,6 +134,23 @@ async function callChatMessageApi(tripId, token, body) {
   return response;
 }
 
+async function callMemberStatusApi(token, body) {
+  const response = {
+    statusCode: 200,
+    body: undefined,
+    headers: {},
+    status(code) { this.statusCode = code; return this; },
+    setHeader(name, value) { this.headers[name.toLowerCase()] = value; return this; },
+    json(data) { this.body = data; return this; },
+  };
+  await memberStatusHandler({
+    method: "PATCH",
+    headers: { cookie: token ? `lexride_session=${encodeURIComponent(token)}` : "" },
+    body,
+  }, response);
+  return response;
+}
+
 const created = await createRide({
   fromLabel: "Apaasi",
   toLabel: "KNUST",
@@ -199,3 +223,25 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = serviceRoleKey;
 assert.ok(databaseAuthHeaders.length > 0 && databaseAuthHeaders.every((header) => header === `Bearer ${serviceRoleKey}`), "all server-side trip and auth queries use the service role");
 console.log("PASS: chat history stays private to the host and approved passengers");
 console.log("PASS: public and pending responses redact member details; only server-role database access is used");
+
+const passengerFinish = await callMemberStatusApi("passenger-token", { tripId: created.id, status: "Finished" });
+assert.equal(passengerFinish.statusCode, 403, "only the host can finish a trip");
+const finished = await callMemberStatusApi("host-token", { tripId: created.id, status: "Finished" });
+assert.equal(finished.statusCode, 200, "host can finish an open trip");
+assert.equal(finished.body.lifecycleStatus, "Finished", "finished status is returned to the host");
+const finishRetry = await callMemberStatusApi("host-token", { tripId: created.id, status: "Finished" });
+assert.equal(finishRetry.statusCode, 200, "repeating the same finish action is idempotent");
+assert.equal((await joinRide(created.id, "New Passenger", "Male", "passenger-2")).status, 409, "finished trips reject new join requests");
+assert.equal((await setMemberStatus(created.id, "request-2", "Approved")).status, 409, "finished trips reject pending request changes");
+assert.equal((await addMessage(created.id, "Trip Host", "After the trip", "Male")).status, 409, "finished trip chat is read-only");
+const finishToCancel = await callMemberStatusApi("host-token", { tripId: created.id, status: "Cancelled" });
+assert.equal(finishToCancel.statusCode, 409, "a finished trip cannot later be changed to cancelled");
+
+const cancelledRide = await createRide({ fromLabel: "Legon", toLabel: "Accra Mall", time: "08:00", seats: 2, creatorName: "Trip Host", creatorSex: "Male", creatorAccountId: "host-1" });
+const cancelled = await callMemberStatusApi("host-token", { tripId: cancelledRide.id, status: "Cancelled" });
+assert.equal(cancelled.statusCode, 200, "host can cancel an open trip");
+assert.equal(cancelled.body.lifecycleStatus, "Cancelled", "cancelled status is persisted and returned");
+assert.equal((await joinRide(cancelledRide.id, "New Passenger", "Female", "passenger-2")).status, 409, "cancelled trips reject new join requests");
+assert.equal((await addMessage(cancelledRide.id, "Trip Host", "After cancellation", "Male")).status, 409, "cancelled trip chat is read-only");
+assert.ok(databaseAuthHeaders.every((header) => header === `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`), "lifecycle reads and writes continue using only the service role");
+console.log("PASS: only hosts can finish or cancel trips; terminal statuses are idempotent and block new requests and messages");
