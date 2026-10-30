@@ -214,11 +214,15 @@ function Logo() {
 
 function RouteLine({ from, to }: { from: string; to: string }) {
   return (
-    <div className="flex min-w-0 items-center gap-2 text-sm">
-      <span className="h-2.5 w-2.5 shrink-0 rounded-full border-[3px] border-terracotta bg-sand" />
-      <span className="truncate font-semibold text-ink">{from}</span>
-      <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate/60" />
-      <span className="truncate font-semibold text-ink">{to}</span>
+    <div className="flex min-w-0 flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full border-[3px] border-terracotta bg-sand" />
+        <span className="truncate font-semibold text-ink">{from}</span>
+      </div>
+      <div className="flex min-w-0 items-center gap-2">
+        <ArrowRight className="ml-[-2px] h-3.5 w-3.5 shrink-0 text-slate/60 sm:ml-0" />
+        <span className="truncate font-semibold text-ink">{to}</span>
+      </div>
     </div>
   );
 }
@@ -752,6 +756,21 @@ export default function Home() {
     void openTripChat({ id: conversation.id, from: conversation.from, to: conversation.to, date: conversation.date, time: conversation.time, seats: conversation.seats, joined: 1, contribution: 0, meetingPoint: "Choose together", host: conversation.host, hostSex: conversation.hostSex, status: "Open", lifecycleStatus: conversation.lifecycleStatus }, "messages");
   };
 
+  // Match the phone's status bar to the screen: blue in the chat, light everywhere else.
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", view === "chat" ? "#2563eb" : "#f4f6fa");
+  }, [view]);
+
+  // Stop the page scrolling behind an open sheet.
+  const sheetOpen = !!showSheet || showAuth || showProfile || (showRequests && hostRequests.length > 0) || (!!joinTrip && joinStage !== "room" && view !== "chat");
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previous; };
+  }, [sheetOpen]);
+
   const openAuth = (mode: "signin" | "signup", nextTrip?: Trip | null) => {
     setAuthMode(mode);
     setPendingJoin(nextTrip || null);
@@ -1202,7 +1221,7 @@ export default function Home() {
         </div>
       </header>}
 
-      {account && view !== "chat" && visibleHostRequests.length > 0 && <div className="mx-auto max-w-6xl px-5 pt-3 lg:px-8"><button type="button" onClick={() => setShowRequests(true)} className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[#bfdbfe] bg-[#eff6ff] px-4 py-3 text-left"><span className="flex items-center gap-3"><span className="nav-count !h-6 !min-w-6 !text-xs">{visibleHostRequests.length}</span><span className="text-sm font-semibold text-ink">{visibleHostRequests.length === 1 ? "1 person wants to join your trip" : `${visibleHostRequests.length} people want to join your trips`}</span></span><span className="text-xs font-bold text-terracotta">Review <ArrowRight className="ml-0.5 inline h-3.5 w-3.5" /></span></button></div>}
+      {account && view !== "chat" && visibleHostRequests.length > 0 && <div className="mx-auto max-w-6xl px-5 pt-3 lg:px-8"><button type="button" onClick={() => setShowRequests(true)} className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[#bfdbfe] bg-[#eff6ff] px-4 py-3 text-left"><span className="flex items-center gap-3"><span className="nav-count !h-6 !min-w-6 !text-xs">{visibleHostRequests.length}</span><span className="text-sm font-semibold text-ink">{visibleHostRequests.length === 1 ? "1 person wants to join your trip" : `${visibleHostRequests.length} people want to join your trips`}</span></span><span className="shrink-0 whitespace-nowrap text-xs font-bold text-terracotta">Review <ArrowRight className="ml-0.5 inline h-3.5 w-3.5" /></span></button></div>}
 
       <main className={view === "chat" ? "" : "mx-auto max-w-6xl px-5 pb-28 pt-6 md:pb-16 md:pt-8 lg:px-8 lg:pt-14"}>
         {view === "home" && <>
@@ -1214,7 +1233,7 @@ export default function Home() {
 
           <section aria-label="Going your way" className="mt-8 rounded-3xl border border-line bg-white p-5 md:p-6">
             <div className="flex items-start justify-between gap-3"><div><h2 className="mt-1 font-display text-2xl font-bold tracking-[-0.03em]">Find people going your way</h2></div></div>
-            {nearbyStatus === "idle" && <><p className="mt-2 max-w-lg text-sm leading-6 text-slate">We use your location only to find matches. Nobody else sees it.</p><button type="button" className="button-primary mt-4 w-full sm:w-auto" onClick={findNearby}><Navigation className="mr-2 h-4 w-4" /> Find trips near me</button><button type="button" className="mt-3 block text-sm font-semibold text-terracotta underline" onClick={() => { if (!account) { openAuth("signin"); return; } setView("create"); setCreatedTrip(null); }}>Or start your own trip</button></>}
+            {nearbyStatus === "idle" && <><p className="mt-2 max-w-lg text-sm leading-6 text-slate">We use your location only to find matches. Nobody else sees it.</p><button type="button" className="button-primary mt-4 w-full sm:w-auto" onClick={findNearby}><Navigation className="mr-2 h-4 w-4" /> Find trips near me</button><button type="button" className="mt-1 block py-3 text-sm font-semibold text-terracotta underline" onClick={() => { if (!account) { openAuth("signin"); return; } setView("create"); setCreatedTrip(null); }}>Or start your own trip</button></>}
             {nearbyStatus === "locating" && <p className="mt-4 flex items-center gap-2 text-sm text-slate"><Loader2 className="h-4 w-4 animate-spin" /> Finding your location…</p>}
             {(nearbyStatus === "loading" || nearbyStatus === "ready" || nearbyStatus === "error") && <>
               <div className="mt-4"><LocationInput label="Where are you going? (optional)" value={nearbyDestText} placeholder="e.g. KNUST or Kejetia" onChange={(value) => { setNearbyDestText(value); if (nearbyDest) { setNearbyDest(undefined); if (nearbyCoords) void loadNearby(nearbyCoords); } }} onSelect={(place) => { setNearbyDestText(place.name); setNearbyDest(place); if (nearbyCoords) void loadNearby(nearbyCoords, place); }} /></div>
@@ -1304,7 +1323,7 @@ export default function Home() {
         })()}
         {view === "messages" && <section className="py-4 md:py-10"><h1 className="font-display text-3xl font-bold tracking-[-0.04em] md:text-5xl">Messages</h1>{!account ? <div className="empty-state mt-8 max-w-2xl"><h3 className="font-display text-xl font-bold">Sign in to see your messages</h3><p className="mt-1 text-sm text-slate">Your trip group chats appear here.</p><button className="button-primary mt-4" onClick={() => openAuth("signin")}>Sign in</button></div> : !inboxLoaded ? <p className="mt-8 flex items-center gap-2 text-sm text-slate"><Loader2 className="h-4 w-4 animate-spin" /> Loading your chats…</p> : <div className="mt-6 grid max-w-3xl gap-2">{inbox.map((conversation) => { const last = conversation.messages[conversation.messages.length - 1]; const unread = unreadCount(conversation); return <button key={conversation.id} type="button" className={`convo ${unread > 0 ? "convo-unread" : ""}`} onClick={() => openConversation(conversation)}><span className="convo-icon"><MessageCircle className="h-5 w-5" /></span><span className="min-w-0 flex-1 text-left"><span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-bold text-ink">{conversation.from} → {conversation.to}</span><span className="shrink-0 text-[11px] text-slate">{last ? formatMessageTime(last.createdAt) : ""}</span></span><span className="mt-0.5 block truncate text-[11px] text-slate">{conversation.date} · {conversation.time} · {conversation.role === "created" ? "You started this" : `Host: ${conversation.host}`}{conversation.lifecycleStatus !== "Open" ? ` · ${conversation.lifecycleStatus}` : ""}</span><span className="mt-1 flex items-center justify-between gap-2"><span className={`truncate text-sm ${unread > 0 ? "font-bold text-ink" : "text-slate"}`}>{last ? `${last.sender === account.fullName ? "You" : last.sender}: ${last.text}` : "No messages yet. Say hello."}</span>{unread > 0 && <span className="convo-badge">{unread > 9 ? "9+" : unread}</span>}</span></span></button>; })}{inbox.length === 0 && <div className="empty-state"><h3 className="font-display text-xl font-bold">No chats yet</h3><p className="mt-1 text-sm text-slate">When you start a trip or a host approves you, its group chat shows up here.</p><button className="button-primary mt-4" onClick={() => setView("home")}>Find a trip</button></div>}</div>}</section>}
 
-        {view === "trips" && <section className="py-4 md:py-10"><h1 className="font-display text-3xl font-bold tracking-[-0.04em] md:text-5xl">My trips</h1>{!account ? <div className="empty-state mt-8 max-w-2xl"><h3 className="font-display text-xl font-bold">Sign in to see your trips</h3><button className="button-primary mt-4" onClick={() => openAuth("signin")}>Sign in</button></div> : <><div className="mt-8"><div className="mt-4 grid max-w-3xl gap-3">{historyTrips.map((trip) => <div key={trip.id} className="trip-card"><div className="flex items-start justify-between gap-3"><div><RouteLine from={trip.from} to={trip.to} /><div className="mt-3 text-xs text-slate">{trip.date} · {trip.time} · {trip.role === "created" ? "You started this" : "You joined this"}</div></div><span className={`status-pill ${trip.lifecycleStatus === "Cancelled" || trip.requestStatus === "Closed" || trip.requestStatus === "Declined" ? "status-full" : trip.lifecycleStatus === "Finished" ? "status-warm" : trip.role === "created" || trip.requestStatus === "Approved" ? "status-green" : "status-warm"}`}>{trip.lifecycleStatus && trip.lifecycleStatus !== "Open" ? trip.lifecycleStatus : trip.role === "created" ? "Created" : trip.requestStatus === "Approved" ? "Approved" : trip.requestStatus === "Declined" ? "Declined" : trip.requestStatus === "Closed" ? "Closed" : "Waiting"}</span></div><div className="mt-4 flex items-center justify-between"><span className="text-xs text-slate">Host: <strong className="text-ink">{trip.host}</strong></span>{trip.role === "created" || trip.requestStatus === "Approved" || ((trip.requestStatus !== "Declined" && trip.requestStatus !== "Closed") && (trip.lifecycleStatus || "Open") === "Open") ? <button className="button-soft !px-3 !py-2 text-xs" onClick={() => trip.role === "created" ? openHistoryTrip(trip) : join(trip, trip.requestStatus)}>Open trip</button> : <span className="text-xs font-semibold text-slate">Request closed</span>}</div></div>)}{historyTrips.length === 0 && <div className="empty-state"><h3 className="font-display text-xl font-bold">No trips yet</h3><p className="mt-1 text-sm text-slate">Create a trip or join someone going your way.</p><button className="button-primary mt-4" onClick={() => setView("create")}>Create a trip</button></div>}</div></div></>}</section>}
+        {view === "trips" && <section className="py-4 md:py-10"><h1 className="font-display text-3xl font-bold tracking-[-0.04em] md:text-5xl">My trips</h1>{!account ? <div className="empty-state mt-8 max-w-2xl"><h3 className="font-display text-xl font-bold">Sign in to see your trips</h3><button className="button-primary mt-4" onClick={() => openAuth("signin")}>Sign in</button></div> : <><div className="mt-8"><div className="mt-4 grid max-w-3xl gap-3">{historyTrips.map((trip) => <div key={trip.id} className="trip-card"><div className="flex items-start justify-between gap-3"><div className="min-w-0 flex-1"><RouteLine from={trip.from} to={trip.to} /><div className="mt-3 text-xs text-slate">{trip.date} · {trip.time} · {trip.role === "created" ? "You started this" : "You joined this"}</div></div><span className={`shrink-0 status-pill ${trip.lifecycleStatus === "Cancelled" || trip.requestStatus === "Closed" || trip.requestStatus === "Declined" ? "status-full" : trip.lifecycleStatus === "Finished" ? "status-warm" : trip.role === "created" || trip.requestStatus === "Approved" ? "status-green" : "status-warm"}`}>{trip.lifecycleStatus && trip.lifecycleStatus !== "Open" ? trip.lifecycleStatus : trip.role === "created" ? "Created" : trip.requestStatus === "Approved" ? "Approved" : trip.requestStatus === "Declined" ? "Declined" : trip.requestStatus === "Closed" ? "Closed" : "Waiting"}</span></div><div className="mt-4 flex items-center justify-between"><span className="text-xs text-slate">Host: <strong className="text-ink">{trip.host}</strong></span>{trip.role === "created" || trip.requestStatus === "Approved" || ((trip.requestStatus !== "Declined" && trip.requestStatus !== "Closed") && (trip.lifecycleStatus || "Open") === "Open") ? <button className="button-soft !px-3 !py-2 text-xs" onClick={() => trip.role === "created" ? openHistoryTrip(trip) : join(trip, trip.requestStatus)}>Open trip</button> : <span className="text-xs font-semibold text-slate">Request closed</span>}</div></div>)}{historyTrips.length === 0 && <div className="empty-state"><h3 className="font-display text-xl font-bold">No trips yet</h3><p className="mt-1 text-sm text-slate">Create a trip or join someone going your way.</p><button className="button-primary mt-4" onClick={() => setView("create")}>Create a trip</button></div>}</div></div></>}</section>}
       </main>
 
       {view !== "chat" && <nav aria-label="Main" className="tabbar md:hidden">
