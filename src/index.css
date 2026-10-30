@@ -212,3 +212,5 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; t
   /* Banners and long text never force the page wider than the screen */
   h1, h2, h3, p { overflow-wrap: anywhere; }
 }
+
+.convo { min-width: 0; max-width: 100%; }
