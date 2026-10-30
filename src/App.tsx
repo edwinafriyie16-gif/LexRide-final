@@ -44,6 +44,15 @@ type GuestRequest = { id: string; name: string; sex: "Male" | "Female"; status: 
 type HostPendingRequest = GuestRequest & { tripId: string; from: string; to: string; date: string; time: string };
 type ChatMessage = { id: string; sender: string; text: string; mine?: boolean };
 type Account = { id: string; fullName: string; sex: "Male" | "Female" };
+type InboxMessage = { id: string; sender: string; text: string; createdAt: number };
+type InboxConversation = { id: string; from: string; to: string; date: string; time: string; seats: number; host: string; hostSex?: "Male" | "Female"; role: "created" | "joined"; lifecycleStatus: TripLifecycleStatus; messages: InboxMessage[]; lastActivity: number };
+type MessageBanner = { id: number; tripId: string; route: string; sender: string; text: string; extra: number };
+function formatMessageTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return date.toLocaleDateString([], { day: "numeric", month: "short" });
+}
 type HistoryTrip = Trip & { role: "created" | "joined"; requestStatus?: "Waiting" | "Approved" | "Declined" | "Closed" };
 type CommuteGroup = { id: string; name: string; from_label: string; to_label: string; usual_time: string; days: string[]; seats: number };
 
@@ -421,7 +430,7 @@ function MeetingPointSheet({ trip, onClose, onConfirm }: { trip: Trip; onClose: 
 }
 
 export default function Home() {
-  const [view, setView] = useState<"home" | "create" | "trips" | "chat">("home");
+  const [view, setView] = useState<"home" | "create" | "trips" | "messages" | "chat">("home");
   const [trips, setTrips] = useState<Trip[]>(initialTrips);
   const [showSheet, setShowSheet] = useState<Trip | null>(null);
   const [joinTrip, setJoinTrip] = useState<Trip | null>(null);
@@ -471,6 +480,17 @@ export default function Home() {
   const [groupTime, setGroupTime] = useState("07:00");
   const [groupSeats, setGroupSeats] = useState("3");
   const [groupBusy, setGroupBusy] = useState(false);
+  const [inbox, setInbox] = useState<InboxConversation[]>([]);
+  const [inboxLoaded, setInboxLoaded] = useState(false);
+  const [readMarks, setReadMarks] = useState<Record<string, number>>({});
+  const [messageBanner, setMessageBanner] = useState<MessageBanner | null>(null);
+  const [chatFrom, setChatFrom] = useState<"trips" | "messages">("trips");
+  const readMarksRef = useRef<Record<string, number>>({});
+  const inboxSeenRef = useRef<{ messages: Set<string>; trips: Set<string> } | null>(null);
+  const viewRef = useRef(view);
+  const activeChatTripRef = useRef<string | undefined>(undefined);
+  viewRef.current = view;
+  activeChatTripRef.current = view === "chat" ? joinTrip?.id : undefined;
 
   const filteredTrips = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -573,6 +593,7 @@ export default function Home() {
         setJoinTrip(approvedTrip);
         setCreatedTrip(null);
         setJoinStage("room");
+        setChatFrom("trips");
         setView("chat");
         toast.success("You’re approved. The trip group chat is ready.");
       } catch { /* Retry on the next check while the request is still waiting. */ }
@@ -599,6 +620,8 @@ export default function Home() {
         if (!response.ok || stopped) return;
         const data = await response.json();
         if (stopped || !Array.isArray(data.messages)) return;
+        const newest = data.messages.reduce((max: number, message: any) => Math.max(max, Number(message.createdAt) || 0), 0);
+        if (newest) markRead(tripId, newest);
         setChatMessages((current) => {
           const pending = current.filter((message) => message.id.startsWith("tmp-"));
           const server = data.messages.map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === me }));
@@ -615,6 +638,91 @@ export default function Home() {
     document.addEventListener("visibilitychange", onVisible);
     return () => { stopped = true; window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisible); };
   }, [view, joinTrip?.id, joinStage, account?.fullName]);
+
+  const markRead = (tripId: string, timestamp: number) => {
+    if (!account) return;
+    const current = readMarksRef.current[tripId];
+    if (current !== undefined && current >= timestamp) return;
+    const next = { ...readMarksRef.current, [tripId]: timestamp };
+    readMarksRef.current = next;
+    setReadMarks(next);
+    try { window.localStorage.setItem(`lexride-read:${account.id}`, JSON.stringify(next)); } catch { /* Read marks are a convenience; ignore storage failures. */ }
+  };
+
+  useEffect(() => {
+    inboxSeenRef.current = null;
+    setInbox([]);
+    setInboxLoaded(false);
+    setMessageBanner(null);
+    let marks: Record<string, number> = {};
+    if (account) { try { marks = JSON.parse(window.localStorage.getItem(`lexride-read:${account.id}`) || "{}") || {}; } catch { marks = {}; } }
+    readMarksRef.current = marks;
+    setReadMarks(marks);
+  }, [account?.id]);
+
+  useEffect(() => {
+    if (!account) return;
+    let stopped = false;
+    let inFlight = false;
+    const me = account.fullName;
+    const poll = async () => {
+      if (stopped || inFlight || document.visibilityState === "hidden") return;
+      inFlight = true;
+      try {
+        const response = await fetch("/api/account/inbox", { cache: "no-store" });
+        if (!response.ok || stopped) return;
+        const data = await response.json();
+        if (stopped) return;
+        const conversations: InboxConversation[] = Array.isArray(data.conversations) ? data.conversations : [];
+        const previous = inboxSeenRef.current;
+        const fresh: Array<{ conversation: InboxConversation; message: InboxMessage }> = [];
+        const seen = { messages: new Set<string>(), trips: new Set<string>() };
+        for (const conversation of conversations) {
+          seen.trips.add(conversation.id);
+          for (const message of conversation.messages) {
+            seen.messages.add(message.id);
+            if (previous && previous.trips.has(conversation.id) && !previous.messages.has(message.id) && message.sender !== me && message.sender !== "LexRide") fresh.push({ conversation, message });
+          }
+          // First time we see a trip, treat its existing history as already read.
+          if (readMarksRef.current[conversation.id] === undefined) markRead(conversation.id, conversation.messages[conversation.messages.length - 1]?.createdAt ?? 0);
+        }
+        inboxSeenRef.current = seen;
+        setInbox(conversations);
+        setInboxLoaded(true);
+        const alertable = fresh.filter(({ conversation }) => conversation.id !== activeChatTripRef.current && viewRef.current !== "messages");
+        if (alertable.length) {
+          const latest = alertable.reduce((best, item) => item.message.createdAt >= best.message.createdAt ? item : best);
+          setMessageBanner({ id: Date.now(), tripId: latest.conversation.id, route: `${latest.conversation.from} → ${latest.conversation.to}`, sender: latest.message.sender, text: latest.message.text, extra: alertable.length - 1 });
+        }
+      } catch { /* Keep the last known inbox during temporary network failures. */ }
+      finally { inFlight = false; }
+    };
+    void poll();
+    const interval = window.setInterval(() => { void poll(); }, 4000);
+    const onVisible = () => { if (document.visibilityState === "visible") void poll(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { stopped = true; window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisible); };
+  }, [account?.id]);
+
+  useEffect(() => {
+    if (!messageBanner) return;
+    const timer = window.setTimeout(() => setMessageBanner((current) => current?.id === messageBanner.id ? null : current), 6000);
+    return () => window.clearTimeout(timer);
+  }, [messageBanner?.id]);
+
+  // While a trip chat is open, everything in it counts as read.
+  useEffect(() => {
+    if (view !== "chat" || !joinTrip) return;
+    const latest = inbox.find((conversation) => conversation.id === joinTrip.id)?.messages.at(-1)?.createdAt;
+    if (latest) markRead(joinTrip.id, latest);
+  }, [view, joinTrip?.id, inbox]);
+
+  const unreadCount = (conversation: InboxConversation) => conversation.messages.filter((message) => message.sender !== account?.fullName && message.sender !== "LexRide" && message.createdAt > (readMarks[conversation.id] ?? Number.POSITIVE_INFINITY)).length;
+  const totalUnread = inbox.reduce((sum, conversation) => sum + (conversation.id === activeChatTripRef.current ? 0 : unreadCount(conversation)), 0);
+  const openConversation = (conversation: InboxConversation) => {
+    setMessageBanner(null);
+    void openTripChat({ id: conversation.id, from: conversation.from, to: conversation.to, date: conversation.date, time: conversation.time, seats: conversation.seats, joined: 1, contribution: 0, meetingPoint: "Choose together", host: conversation.host, hostSex: conversation.hostSex, status: "Open", lifecycleStatus: conversation.lifecycleStatus }, "messages");
+  };
 
   const openAuth = (mode: "signin" | "signup", nextTrip?: Trip | null) => {
     setAuthMode(mode);
@@ -736,7 +844,7 @@ export default function Home() {
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
   };
 
-  const openTripChat = async (trip: Trip) => {
+  const openTripChat = async (trip: Trip, from: "trips" | "messages" = "trips") => {
     try {
       const response = await fetch(`/api/rides/${encodeURIComponent(trip.id)}`);
       const ride = await response.json();
@@ -746,6 +854,7 @@ export default function Home() {
       setCreatedTrip(null);
       setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
       setJoinStage("room");
+      setChatFrom(from);
       setView("chat");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not load the trip room"); }
   };
@@ -1042,11 +1151,19 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-sand text-ink">
       <Toaster />
+      {messageBanner && <div className="msg-banner-wrap" role="status" aria-live="polite">
+        <button type="button" className="msg-banner" onClick={() => { const conversation = inbox.find((item) => item.id === messageBanner.tripId); if (conversation) openConversation(conversation); else setMessageBanner(null); }}>
+          <span className="msg-banner-icon"><MessageCircle className="h-5 w-5" /></span>
+          <span className="min-w-0 flex-1 text-left"><span className="block truncate text-[11px] font-bold opacity-70">{messageBanner.route}</span><span className="block truncate text-sm font-bold">{messageBanner.sender}</span><span className="block truncate text-sm opacity-90">{messageBanner.text}</span>{messageBanner.extra > 0 && <span className="block text-[11px] font-bold opacity-70">+{messageBanner.extra} more in other trips</span>}</span>
+        </button>
+        <button type="button" className="msg-banner-close" aria-label="Dismiss message alert" onClick={() => setMessageBanner(null)}><X className="h-4 w-4" /></button>
+      </div>}
       <header className="site-header">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 lg:px-8">
           <button onClick={() => { setView("home"); setCreatedTrip(null); }} aria-label="LexRide home"><Logo /></button>
           <nav className="hidden items-center gap-1 md:flex">
             <button className={`nav-link ${view === "home" ? "nav-active" : ""}`} onClick={() => setView("home")}>Find trips</button>
+            <button className={`nav-link ${view === "messages" ? "nav-active" : ""}`} onClick={() => setView("messages")}>Messages{totalUnread > 0 && <> <span className="nav-count">{totalUnread}</span></>}</button>
             <button className={`nav-link ${view === "trips" ? "nav-active" : ""}`} onClick={() => setView("trips")}>My trips <span className="nav-count">{trips.filter((trip) => trip.host === "You").length}</span></button>
           </nav>
           <div className="hidden items-center gap-2 md:flex">{account ? <button className="button-soft !gap-2 !px-3 !py-2" onClick={() => setShowProfile(true)}><span className="avatar !h-7 !w-7 !bg-[#0f172a] !text-[11px] !text-white">{account.fullName.slice(0, 1).toUpperCase()}</span><span className="text-xs font-bold text-ink">{account.fullName}</span></button> : <><button className="button-soft !px-3 !py-2 text-sm" onClick={() => openAuth("signin")}>Sign in</button></>}<button className="button-dark !rounded-xl !px-4 !py-2.5 text-sm" onClick={() => { if (!account) { openAuth("signin"); return; } setView("create"); setCreatedTrip(null); }}><Plus className="mr-1.5 h-4 w-4" /> Create a trip</button></div>
@@ -1106,7 +1223,7 @@ export default function Home() {
         {view === "chat" && !joinTrip && <section className="py-4 md:py-10"><div className="empty-state mx-auto mt-8 max-w-xl"><MessageCircle className="mx-auto h-8 w-8 text-terracotta" /><h1 className="mt-3 font-display text-2xl font-bold">Trip chat unavailable</h1><p className="mt-2 text-sm leading-6 text-slate">We couldn’t restore this trip room. Open an approved trip from your trips list to continue chatting.</p><button type="button" className="button-primary mt-5" onClick={() => setView("trips")}>Go to My Trips</button></div></section>}
         {view === "chat" && joinTrip && <section className="flex min-h-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-3 border-b border-line pb-3">
-            <button type="button" className="back-link shrink-0" onClick={() => { setView("trips"); setJoinTrip(null); }}>← Trips</button>
+            <button type="button" className="back-link shrink-0" onClick={() => { setView(chatFrom); setJoinTrip(null); }}>{chatFrom === "messages" ? "← Messages" : "← Trips"}</button>
             <div className="min-w-0 flex-1">
               <h1 className="truncate font-display text-base font-bold text-ink sm:text-lg">{joinTrip.from} → {joinTrip.to}</h1>
               <p className="truncate text-[11px] text-slate">{joinTrip.date} · {joinTrip.time} · {joinTrip.host}</p>
@@ -1129,12 +1246,15 @@ export default function Home() {
           </div>
           <div className="flex shrink-0 items-center gap-1.5 py-2 text-[10px] text-slate"><ShieldCheck className="h-3.5 w-3.5 text-forest" /> Trip chat is only for the host and approved passengers.</div>
         </section>}
+        {view === "messages" && <section className="py-4 md:py-10"><h1 className="font-display text-3xl font-bold tracking-[-0.04em] md:text-5xl">Messages</h1>{!account ? <div className="empty-state mt-8 max-w-2xl"><h3 className="font-display text-xl font-bold">Sign in to see your messages</h3><p className="mt-1 text-sm text-slate">Your trip group chats appear here.</p><button className="button-primary mt-4" onClick={() => openAuth("signin")}>Sign in</button></div> : !inboxLoaded ? <p className="mt-8 flex items-center gap-2 text-sm text-slate"><Loader2 className="h-4 w-4 animate-spin" /> Loading your chats…</p> : <div className="mt-6 grid max-w-3xl gap-2">{inbox.map((conversation) => { const last = conversation.messages[conversation.messages.length - 1]; const unread = unreadCount(conversation); return <button key={conversation.id} type="button" className={`convo ${unread > 0 ? "convo-unread" : ""}`} onClick={() => openConversation(conversation)}><span className="convo-icon"><MessageCircle className="h-5 w-5" /></span><span className="min-w-0 flex-1 text-left"><span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-bold text-ink">{conversation.from} → {conversation.to}</span><span className="shrink-0 text-[11px] text-slate">{last ? formatMessageTime(last.createdAt) : ""}</span></span><span className="mt-0.5 block truncate text-[11px] text-slate">{conversation.date} · {conversation.time} · {conversation.role === "created" ? "You started this" : `Host: ${conversation.host}`}{conversation.lifecycleStatus !== "Open" ? ` · ${conversation.lifecycleStatus}` : ""}</span><span className="mt-1 flex items-center justify-between gap-2"><span className={`truncate text-sm ${unread > 0 ? "font-bold text-ink" : "text-slate"}`}>{last ? `${last.sender === account.fullName ? "You" : last.sender}: ${last.text}` : "No messages yet. Say hello."}</span>{unread > 0 && <span className="convo-badge">{unread > 9 ? "9+" : unread}</span>}</span></span></button>; })}{inbox.length === 0 && <div className="empty-state"><h3 className="font-display text-xl font-bold">No chats yet</h3><p className="mt-1 text-sm text-slate">When you start a trip or a host approves you, its group chat shows up here.</p><button className="button-primary mt-4" onClick={() => setView("home")}>Find a trip</button></div>}</div>}</section>}
+
         {view === "trips" && <section className="py-4 md:py-10"><h1 className="font-display text-3xl font-bold tracking-[-0.04em] md:text-5xl">My trips</h1>{!account ? <div className="empty-state mt-8 max-w-2xl"><h3 className="font-display text-xl font-bold">Sign in to see your trips</h3><button className="button-primary mt-4" onClick={() => openAuth("signin")}>Sign in</button></div> : <><div className="mt-8"><div className="mt-4 grid max-w-3xl gap-3">{historyTrips.map((trip) => <div key={trip.id} className="trip-card"><div className="flex items-start justify-between gap-3"><div><RouteLine from={trip.from} to={trip.to} /><div className="mt-3 text-xs text-slate">{trip.date} · {trip.time} · {trip.role === "created" ? "You started this" : "You joined this"}</div></div><span className={`status-pill ${trip.lifecycleStatus === "Cancelled" || trip.requestStatus === "Closed" || trip.requestStatus === "Declined" ? "status-full" : trip.lifecycleStatus === "Finished" ? "status-warm" : trip.role === "created" || trip.requestStatus === "Approved" ? "status-green" : "status-warm"}`}>{trip.lifecycleStatus && trip.lifecycleStatus !== "Open" ? trip.lifecycleStatus : trip.role === "created" ? "Created" : trip.requestStatus === "Approved" ? "Approved" : trip.requestStatus === "Declined" ? "Declined" : trip.requestStatus === "Closed" ? "Closed" : "Waiting"}</span></div><div className="mt-4 flex items-center justify-between"><span className="text-xs text-slate">Host: <strong className="text-ink">{trip.host}</strong></span>{trip.role === "created" || trip.requestStatus === "Approved" || ((trip.requestStatus !== "Declined" && trip.requestStatus !== "Closed") && (trip.lifecycleStatus || "Open") === "Open") ? <button className="button-soft !px-3 !py-2 text-xs" onClick={() => trip.role === "created" ? openHistoryTrip(trip) : join(trip, trip.requestStatus)}>Open trip</button> : <span className="text-xs font-semibold text-slate">Request closed</span>}</div></div>)}{historyTrips.length === 0 && <div className="empty-state"><h3 className="font-display text-xl font-bold">No trips yet</h3><p className="mt-1 text-sm text-slate">Create a trip or join someone going your way.</p><button className="button-primary mt-4" onClick={() => setView("create")}>Create a trip</button></div>}</div></div></>}</section>}
       </main>
 
       {view !== "chat" && <nav aria-label="Main" className="tabbar md:hidden">
         <button type="button" className={`tab ${view === "home" ? "tab-active" : ""}`} aria-current={view === "home" ? "page" : undefined} onClick={() => { setView("home"); setCreatedTrip(null); window.scrollTo({ top: 0, behavior: "smooth" }); }}><Search className="h-5 w-5" /><span>Find</span></button>
         <button type="button" className={`tab tab-create ${view === "create" ? "tab-active" : ""}`} aria-label="Create a trip" onClick={() => { if (!account) { openAuth("signin"); return; } setView("create"); setCreatedTrip(null); }}><span className="tab-plus"><Plus className="h-6 w-6" /></span><span>Create</span></button>
+        <button type="button" className={`tab ${view === "messages" ? "tab-active" : ""}`} aria-current={view === "messages" ? "page" : undefined} aria-label={totalUnread > 0 ? `Messages, ${totalUnread} unread` : "Messages"} onClick={() => setView("messages")}><span className="relative"><MessageCircle className="h-5 w-5" />{totalUnread > 0 && <span className="tab-dot tab-dot-message">{totalUnread > 9 ? "9+" : totalUnread}</span>}</span><span>Messages</span></button>
         <button type="button" className={`tab ${view === "trips" ? "tab-active" : ""}`} aria-current={view === "trips" ? "page" : undefined} onClick={() => setView("trips")}><span className="relative"><CalendarDays className="h-5 w-5" />{visibleHostRequests.length > 0 && <span className="tab-dot">{visibleHostRequests.length}</span>}</span><span>My trips</span></button>
       </nav>}
 

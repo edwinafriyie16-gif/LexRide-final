@@ -56,6 +56,31 @@ export default async function handler(req: any, res: any) {
       }) });
     }
 
+    if (path === "inbox" && req.method === "GET") {
+      // Every trip chat this account can read: trips they host, plus trips where they are an approved passenger.
+      const hosted = await supabaseRequest<TripRow[]>(`lexride_trip_rooms?creator_account_id=eq.${encodeURIComponent(account.id)}&select=id,from_label,to_label,date,time,seats,creator_name,creator_sex,creator_account_id,created_at,lifecycle_status&order=created_at.desc&limit=100`, {}, true);
+      const approved = await supabaseRequest<{ trip_id: string }[]>(`lexride_trip_members?account_id=eq.${encodeURIComponent(account.id)}&status=eq.Approved&select=trip_id&limit=100`, {}, true);
+      const hostedIds = new Set(hosted.map((trip) => trip.id));
+      const joinedIds = Array.from(new Set(approved.map((item) => item.trip_id))).filter((id) => !hostedIds.has(id));
+      const joined = joinedIds.length ? await supabaseRequest<TripRow[]>(`lexride_trip_rooms?id=in.(${joinedIds.map(encodeURIComponent).join(",")})&select=id,from_label,to_label,date,time,seats,creator_name,creator_sex,creator_account_id,created_at,lifecycle_status&limit=100`, {}, true) : [];
+      const rooms = [...hosted, ...joined];
+      res.setHeader("Cache-Control", "private, no-store, max-age=0");
+      if (!rooms.length) return res.json({ conversations: [] });
+      const roomIds = rooms.map((trip) => encodeURIComponent(trip.id)).join(",");
+      const rows = await supabaseRequest<{ id: string; trip_id: string; sender: string; text: string; created_at: string }[]>(`lexride_trip_messages?trip_id=in.(${roomIds})&select=id,trip_id,sender,text,created_at&order=created_at.desc&limit=500`, {}, true);
+      const byTrip = new Map<string, { id: string; sender: string; text: string; createdAt: number }[]>();
+      for (const row of rows) {
+        const list = byTrip.get(row.trip_id) || [];
+        if (list.length < 20) list.push({ id: row.id, sender: row.sender, text: row.text, createdAt: new Date(row.created_at).getTime() });
+        byTrip.set(row.trip_id, list);
+      }
+      const conversations = rooms.map((trip) => {
+        const messages = (byTrip.get(trip.id) || []).reverse();
+        return { id: trip.id, from: trip.from_label, to: trip.to_label, date: trip.date || "Shared trip", time: trip.time, seats: trip.seats, host: trip.creator_name, hostSex: trip.creator_sex, role: trip.creator_account_id === account.id ? "created" : "joined", lifecycleStatus: trip.lifecycle_status || "Open", messages, lastActivity: messages.length ? messages[messages.length - 1].createdAt : new Date(trip.created_at).getTime() };
+      }).sort((a, b) => b.lastActivity - a.lastActivity);
+      return res.json({ conversations });
+    }
+
     if (path === "groups" && req.method === "GET") {
       const memberships = await supabaseRequest<{ group_id: string }[]>(`lexride_commute_group_members?account_id=eq.${encodeURIComponent(account.id)}&status=eq.Approved&select=group_id&limit=100`, {}, true);
       const ids = memberships.map((item) => item.group_id);

@@ -117,7 +117,7 @@ button:active { transform: scale(.97); }
 .route-preview-end { top: auto; right: 18%; bottom: 25%; left: auto; background: #0f172a; }
 
 /* Mobile bottom tab bar */
-.tabbar { position: fixed; inset: auto 0 0 0; z-index: 30; display: grid; grid-template-columns: repeat(3, 1fr); align-items: end; border-top: 1px solid #e2e8f0; background: rgba(255,255,255,.94); backdrop-filter: blur(18px); padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)); }
+.tabbar { position: fixed; inset: auto 0 0 0; z-index: 30; display: grid; grid-template-columns: repeat(4, 1fr); align-items: end; border-top: 1px solid #e2e8f0; background: rgba(255,255,255,.94); backdrop-filter: blur(18px); padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)); }
 .tab { display: flex; min-height: 52px; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 12px; color: #64748b; font-size: 11px; font-weight: 700; }
 .tab-active { color: #2563eb; }
 .tab-create { color: #2563eb; }
@@ -134,3 +134,15 @@ button:active { transform: scale(.97); }
 .toast-error { background: #b3261e; }
 .toast-title { font-size: 14px; font-weight: 700; }
 .toast-copy { margin-top: 2px; font-size: 12px; opacity: .85; }
+
+/* Message alerts and inbox */
+.tab-dot-message { background: #ef4444; color: #ffffff; }
+.msg-banner-wrap { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 10px); left: 50%; z-index: 70; width: calc(100% - 24px); max-width: 440px; transform: translateX(-50%); animation: banner-in .25s ease-out; }
+.msg-banner { display: flex; width: 100%; align-items: center; gap: 12px; border-radius: 20px; background: #2563eb; padding: 12px 44px 12px 12px; color: #ffffff; box-shadow: 0 14px 34px rgba(37,99,235,.38); }
+.msg-banner-icon { display: inline-flex; height: 40px; width: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: rgba(255,255,255,.2); }
+.msg-banner-close { position: absolute; top: 8px; right: 8px; display: inline-flex; height: 28px; width: 28px; align-items: center; justify-content: center; border-radius: 999px; color: #ffffff; opacity: .85; }
+@keyframes banner-in { from { opacity: 0; transform: translate(-50%, -14px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.convo { display: flex; width: 100%; align-items: center; gap: 12px; border: 1px solid #e2e8f0; border-radius: 18px; background: #ffffff; padding: 14px; box-shadow: 0 6px 20px rgba(15,23,42,.04); }
+.convo-unread { border-color: #bfdbfe; background: #f5f9ff; }
+.convo-icon { display: inline-flex; height: 44px; width: 44px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: #eff6ff; color: #2563eb; }
+.convo-badge { display: inline-flex; height: 20px; min-width: 20px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: #2563eb; padding: 0 6px; color: #ffffff; font-size: 11px; font-weight: 800; }
