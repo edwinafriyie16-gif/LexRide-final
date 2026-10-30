@@ -1,4 +1,4 @@
-import { addMessage, canAccessTripChat, createRide, getRide, listNearbyRides, getRideCreatorAccountId, getTripChatAccess, joinRide, redactApprovedRide, redactPublicRide, setMemberStatus } from "../_rideStore.js";
+import { addMessage, canAccessTripChat, createRide, getChatSnapshot, getRide, listNearbyRides, getRideCreatorAccountId, getTripChatAccess, joinRide, redactApprovedRide, redactPublicRide, setMemberStatus } from "../_rideStore.js";
 import { getAccountFromToken, readCookie } from "../_authStore.js";
 
 function route(req: any) {
@@ -51,6 +51,15 @@ export default async function handler(req: any, res: any) {
       if ("error" in result) return res.status(result.status).json({ error: result.error });
       res.setHeader("Cache-Control", "private, no-store");
       return res.status(200).json(result);
+    }
+    if (parts.length === 2 && parts[1] === "messages" && req.method === "GET") {
+      const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
+      if (!account) return res.status(401).json({ error: "Sign in required" });
+      if (!(await canAccessTripChat(parts[0], account.id))) return res.status(403).json({ error: "Only the trip host and approved passengers can access this chat" });
+      const snapshot = await getChatSnapshot(parts[0]);
+      if (!snapshot) return res.status(404).json({ error: "Ride not found" });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(snapshot);
     }
     if (parts.length === 2 && parts[1] === "messages" && req.method === "POST") {
       const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));

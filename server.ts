@@ -2,7 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { randomBytes } from "crypto";
-import { addMessage, canAccessTripChat, createRide, getRide, getRideCreatorAccountId, getTripChatAccess, joinRide, listNearbyRides, redactApprovedRide, redactPublicRide, setMemberStatus, setRideLifecycleStatus } from "./api/_rideStore.js";
+import { addMessage, canAccessTripChat, createRide, getChatSnapshot, getRide, getRideCreatorAccountId, getTripChatAccess, joinRide, listNearbyRides, redactApprovedRide, redactPublicRide, setMemberStatus, setRideLifecycleStatus } from "./api/_rideStore.js";
 import { deleteSession, getAccountFromToken, readCookie, signIn, signUp } from "./api/_authStore.js";
 
 interface SharedRideJoiner {
@@ -147,6 +147,21 @@ async function startServer() {
     } catch (error) {
       console.error("[JoinRide] Error:", error);
       return res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/rides/:id/messages", async (req, res) => {
+    try {
+      const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
+      if (!account) return res.status(401).json({ error: "Sign in required" });
+      if (!(await canAccessTripChat(req.params.id, account.id))) return res.status(403).json({ error: "Only the trip host and approved passengers can access this chat" });
+      const snapshot = await getChatSnapshot(req.params.id);
+      if (!snapshot) return res.status(404).json({ error: "Ride not found" });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.json(snapshot);
+    } catch (error) {
+      console.error("[ChatSnapshot] Error:", error);
+      return res.status(500).json({ error: "Could not load messages" });
     }
   });
 

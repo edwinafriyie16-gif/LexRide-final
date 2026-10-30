@@ -128,11 +128,27 @@ const quickLocations: LocationSuggestion[] = ([
 ] as const).map(([name, formatted_address, lat, lng]) => ({ name, formatted_address, geometry: { location: { lat, lng } }, source: "LexRide quick directory" }));
 const locationCache = new Map<string, LocationSuggestion[]>();
 
+type ToastItem = { id: number; kind: "success" | "info" | "error"; message: string; description?: string };
+let toastItems: ToastItem[] = [];
+const toastListeners = new Set<() => void>();
+function pushToast(kind: ToastItem["kind"], message: string, options?: { description?: string }) {
+  const id = Date.now() + Math.random();
+  toastItems = [...toastItems, { id, kind, message, description: options?.description }].slice(-3);
+  toastListeners.forEach((listener) => listener());
+  window.setTimeout(() => { toastItems = toastItems.filter((item) => item.id !== id); toastListeners.forEach((listener) => listener()); }, kind === "error" ? 5000 : 2800);
+}
 const toast = {
-  success: (message: string, options?: { description?: string }) => window.alert(options?.description ? `${message}\n\n${options.description}` : message),
-  info: (message: string, options?: { description?: string }) => window.alert(options?.description ? `${message}\n\n${options.description}` : message),
-  error: (message: string) => window.alert(message),
+  success: (message: string, options?: { description?: string }) => pushToast("success", message, options),
+  info: (message: string, options?: { description?: string }) => pushToast("info", message, options),
+  error: (message: string, options?: { description?: string }) => pushToast("error", message, options),
 };
+
+function Toaster() {
+  const [, force] = useState(0);
+  useEffect(() => { const listener = () => force((n) => n + 1); toastListeners.add(listener); return () => { toastListeners.delete(listener); }; }, []);
+  return <div className="toaster" role="status" aria-live="polite">{toastItems.map((item) => <div key={item.id} className={`toast toast-${item.kind}`}><div className="toast-title">{item.message}</div>{item.description && <div className="toast-copy">{item.description}</div>}</div>)}</div>;
+}
+
 
 function defaultSchedule() {
   const d = new Date();
@@ -569,6 +585,37 @@ export default function Home() {
     return () => { stopped = true; window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisibilityChange); };
   }, [account, joinStage, joinTrip?.id]);
 
+  useEffect(() => {
+    if (view !== "chat" || !joinTrip || joinStage !== "room" || !account) return;
+    let stopped = false;
+    let inFlight = false;
+    const tripId = joinTrip.id;
+    const me = account.fullName;
+    const poll = async () => {
+      if (inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      try {
+        const response = await fetch(`/api/rides/${encodeURIComponent(tripId)}/messages`, { cache: "no-store" });
+        if (!response.ok || stopped) return;
+        const data = await response.json();
+        if (stopped || !Array.isArray(data.messages)) return;
+        setChatMessages((current) => {
+          const pending = current.filter((message) => message.id.startsWith("tmp-"));
+          const server = data.messages.map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === me }));
+          const same = server.length + pending.length === current.length && server.every((message: ChatMessage, index: number) => current[index]?.id === message.id);
+          return same ? current : [...server, ...pending];
+        });
+        if (data.lifecycleStatus) setJoinTrip((current) => current && current.lifecycleStatus !== data.lifecycleStatus ? { ...current, lifecycleStatus: data.lifecycleStatus } : current);
+      } catch { /* try again on the next tick */ }
+      finally { inFlight = false; }
+    };
+    void poll();
+    const interval = window.setInterval(() => { void poll(); }, 2500);
+    const onVisible = () => { if (document.visibilityState === "visible") void poll(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { stopped = true; window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisible); };
+  }, [view, joinTrip?.id, joinStage, account?.fullName]);
+
   const openAuth = (mode: "signin" | "signup", nextTrip?: Trip | null) => {
     setAuthMode(mode);
     setPendingJoin(nextTrip || null);
@@ -790,6 +837,10 @@ export default function Home() {
 
   const approveGuest = async (request: GuestRequest) => {
     if (!createdTrip) return;
+    const prevGuest = guestRequests;
+    const prevHost = hostRequests;
+    setGuestRequests((items) => items.map((item) => item.id === request.id ? { ...item, status: "Approved" } : item));
+    setHostRequests((items) => items.filter((item) => item.id !== request.id));
     try {
       const response = await fetch("/api/member-status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tripId: createdTrip.id, memberId: request.id, status: "Approved" }) });
       const raw = await response.text();
@@ -801,22 +852,30 @@ export default function Home() {
       setHostRequests((items) => items.filter((item) => item.id !== request.id));
       setTrips((items) => items.map((item) => item.id === createdTrip.id ? { ...item, joined: Math.min(item.seats, item.joined + 1), status: item.joined + 1 >= item.seats ? "Full" : "Almost full" } : item));
       toast.success(`${request.name} approved`);
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not approve passenger"); }
+    } catch (error) { setGuestRequests(prevGuest); setHostRequests(prevHost); toast.error(error instanceof Error ? error.message : "Could not approve passenger"); }
   };
 
   const declineGuest = async (request: GuestRequest) => {
     if (!createdTrip) return;
+    const prevGuest = guestRequests;
+    const prevHost = hostRequests;
+    setGuestRequests((items) => items.map((item) => item.id === request.id ? { ...item, status: "Declined" } : item));
+    setHostRequests((items) => items.filter((item) => item.id !== request.id));
     try {
       const response = await fetch("/api/member-status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tripId: createdTrip.id, memberId: request.id, status: "Declined" }) });
       if (!response.ok) throw new Error("Could not decline passenger");
       setGuestRequests((items) => items.map((item) => item.id === request.id ? { ...item, status: "Declined" } : item));
       setHostRequests((items) => items.filter((item) => item.id !== request.id));
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not decline passenger"); }
+    } catch (error) { setGuestRequests(prevGuest); setHostRequests(prevHost); toast.error(error instanceof Error ? error.message : "Could not decline passenger"); }
   };
 
   const respondToHostRequest = async (request: HostPendingRequest, status: "Approved" | "Declined") => {
     if (respondingRequestIds.includes(request.id)) return;
     setRespondingRequestIds((ids) => [...ids, request.id]);
+    const prevHost = hostRequests;
+    const prevGuest = guestRequests;
+    setHostRequests((items) => items.filter((item) => item.id !== request.id));
+    setGuestRequests((items) => items.map((item) => item.id === request.id ? { ...item, status } : item));
     try {
       const response = await fetch("/api/member-status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tripId: request.tripId, memberId: request.id, status }) });
       const raw = await response.text();
@@ -836,7 +895,7 @@ export default function Home() {
         }
       }
       toast.success(status === "Approved" ? `${request.name} approved` : `${request.name} declined`);
-    } catch (error) { toast.error(error instanceof Error ? error.message : `Could not ${status.toLowerCase()} passenger`); }
+    } catch (error) { setHostRequests(prevHost); setGuestRequests(prevGuest); toast.error(error instanceof Error ? error.message : `Could not ${status.toLowerCase()} passenger`); }
     finally { setRespondingRequestIds((ids) => ids.filter((id) => id !== request.id)); }
   };
 
@@ -870,22 +929,21 @@ export default function Home() {
   const sendChatMessage = async () => {
     const text = chatDraft.trim();
     const activeTrip = joinTrip || createdTrip;
-    if (!text || !activeTrip || chatSendingRef.current) return;
-    chatSendingRef.current = true;
-    setChatSending(true);
+    if (!text || !activeTrip) return;
+    const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setChatMessages((current) => [...current, { id: tempId, sender: account?.fullName || "You", text, mine: true }]);
+    setChatDraft("");
     try {
       const response = await fetch("/api/chat-message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tripId: activeTrip.id, text }) });
       const ride = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(ride.error || `Message could not be sent (${response.status})`);
       if (!Array.isArray(ride.messages)) throw new Error("The chat response was incomplete. Refresh the trip and try again.");
-      setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
-      setChatDraft("");
+      setChatMessages((current) => [...ride.messages.map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })), ...current.filter((message) => message.id.startsWith("tmp-") && message.id !== tempId)]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "We could not send that message. Please try again.";
-      toast.error(message === "Failed to fetch" ? "Connection problem. Your message was not sent. Your draft is still here so you can retry." : `${message} Your draft is still here so you can retry.`);
-    } finally {
-      chatSendingRef.current = false;
-      setChatSending(false);
+      setChatMessages((current) => current.filter((message) => message.id !== tempId));
+      setChatDraft((draft) => draft || text);
+      const message = error instanceof Error ? error.message : "We could not send that message.";
+      toast.error(message === "Failed to fetch" ? "No connection. Your message wasn’t sent, and it’s back in the box." : `${message} Your message is back in the box.`);
     }
   };
 
@@ -983,6 +1041,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-sand text-ink">
+      <Toaster />
       <header className="site-header">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 lg:px-8">
           <button onClick={() => { setView("home"); setCreatedTrip(null); }} aria-label="LexRide home"><Logo /></button>
@@ -1064,8 +1123,8 @@ export default function Home() {
               {chatMessages.length === 0 && <p className="m-auto py-8 text-center text-sm text-slate">No messages yet. Start the conversation.</p>}
             </div>
             <form onSubmit={(event) => { event.preventDefault(); void sendChatMessage(); }} className="flex shrink-0 items-center gap-2 border-t border-line bg-white p-3 md:p-4" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
-              <input type="text" value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} disabled={chatSending || joinTrip.lifecycleStatus !== "Open"} autoComplete="off" aria-label="Message to the trip group" className="field-input !mt-0 min-w-0 flex-1" placeholder={joinTrip.lifecycleStatus === "Open" ? "Message the trip group…" : "Trip chat is read-only"} />
-              <button type="submit" disabled={chatSending || !chatDraft.trim() || joinTrip.lifecycleStatus !== "Open"} aria-label={chatSending ? "Sending message" : joinTrip.lifecycleStatus !== "Open" ? "Trip chat is read-only" : "Send message"} className="button-primary h-11 shrink-0 !px-4 disabled:cursor-not-allowed disabled:opacity-50">{chatSending ? <span className="text-xs">Sending…</span> : <Send className="h-4 w-4" />}</button>
+              <input type="text" value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} disabled={joinTrip.lifecycleStatus !== "Open"} autoComplete="off" aria-label="Message to the trip group" className="field-input !mt-0 min-w-0 flex-1" placeholder={joinTrip.lifecycleStatus === "Open" ? "Message the trip group…" : "Trip chat is read-only"} />
+              <button type="submit" disabled={!chatDraft.trim() || joinTrip.lifecycleStatus !== "Open"} aria-label={chatSending ? "Sending message" : joinTrip.lifecycleStatus !== "Open" ? "Trip chat is read-only" : "Send message"} className="button-primary h-11 shrink-0 !px-4 disabled:cursor-not-allowed disabled:opacity-50">{chatSending ? <span className="text-xs">Sending…</span> : <Send className="h-4 w-4" />}</button>
             </form>
           </div>
           <div className="flex shrink-0 items-center gap-1.5 py-2 text-[10px] text-slate"><ShieldCheck className="h-3.5 w-3.5 text-forest" /> Trip chat is only for the host and approved passengers.</div>

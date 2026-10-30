@@ -327,15 +327,33 @@ export async function setRideLifecycleStatus(id: string, accountId: string, stat
 }
 
 export async function getTripChatAccess(id: string, accountId: string): Promise<"host" | "approved" | "none"> {
-  const creatorAccountId = await getRideCreatorAccountId(id);
+  const [creatorAccountId, approved] = await Promise.all([
+    getRideCreatorAccountId(id),
+    supabaseRequest<Array<{ id: string }>>(
+      `lexride_trip_members?trip_id=eq.${encodeURIComponent(id)}&account_id=eq.${encodeURIComponent(accountId)}&status=eq.Approved&select=id&limit=1`,
+      {},
+      true,
+    ),
+  ]);
   if (creatorAccountId === undefined) return "none";
   if (creatorAccountId === accountId) return "host";
-  const approved = await supabaseRequest<Array<{ id: string }>>(
-    `lexride_trip_members?trip_id=eq.${encodeURIComponent(id)}&account_id=eq.${encodeURIComponent(accountId)}&status=eq.Approved&select=id&limit=1`,
-    {},
-    true,
-  );
   return approved.length > 0 ? "approved" : "none";
+}
+
+async function getTripLifecycle(id: string): Promise<TripLifecycleStatus | undefined> {
+  const rows = await supabaseRequest<Array<{ lifecycle_status: TripLifecycleStatus | null }>>(`lexride_trip_rooms?id=eq.${encodeURIComponent(id)}&select=lifecycle_status&limit=1`);
+  return rows[0] ? rows[0].lifecycle_status || "Open" : undefined;
+}
+
+async function listMessages(id: string): Promise<ChatMessage[]> {
+  const rows = await supabaseRequest<MessageRow[]>(`lexride_trip_messages?trip_id=eq.${encodeURIComponent(id)}&select=*&order=created_at.asc&limit=200`);
+  return rows.map((message) => ({ id: message.id, sender: message.sender, senderSex: message.sender_sex ?? undefined, text: message.text, createdAt: new Date(message.created_at).getTime() }));
+}
+
+// Lightweight snapshot used for chat polling: messages + open/closed state only.
+export async function getChatSnapshot(id: string): Promise<{ messages: ChatMessage[]; lifecycleStatus: TripLifecycleStatus } | undefined> {
+  const [lifecycleStatus, messages] = await Promise.all([getTripLifecycle(id), listMessages(id)]);
+  return lifecycleStatus ? { messages, lifecycleStatus } : undefined;
 }
 
 export async function canAccessTripChat(id: string, accountId: string): Promise<boolean> {
@@ -417,13 +435,13 @@ export async function joinRide(id: string, firstName: string, sex: "Male" | "Fem
 }
 
 export async function setMemberStatus(id: string, memberId: string, status: "Approved" | "Declined"): Promise<SharedRide | { error: string; status: number }> {
-  const ride = await loadRide(id);
-  if (!ride) return { error: "Ride not found", status: 404 };
-  if (ride.lifecycleStatus !== "Open") return { error: `This trip is ${ride.lifecycleStatus.toLowerCase()} and no longer accepting request changes`, status: 409 };
+  const lifecycle = await getTripLifecycle(id);
+  if (!lifecycle) return { error: "Ride not found", status: 404 };
+  if (lifecycle !== "Open") return { error: `This trip is ${lifecycle.toLowerCase()} and no longer accepting request changes`, status: 409 };
   const selected = await supabaseRequest<MemberRow[]>(`lexride_trip_members?id=eq.${encodeURIComponent(memberId)}&trip_id=eq.${encodeURIComponent(id)}&select=*&limit=1`, {}, true);
   const member = selected[0];
   if (!member) return { error: "Member request not found", status: 404 };
-  if (member.status === status) return ride;
+  if (member.status === status) return (await loadRide(id)) as SharedRide;
   if (member.status !== "Waiting") return { error: "This request has already been handled", status: 409 };
 
   let message = `${member.name} was ${status.toLowerCase()}.`;
@@ -465,15 +483,15 @@ export async function setMemberStatus(id: string, memberId: string, status: "App
   return (await loadRide(id)) as SharedRide;
 }
 
-export async function addMessage(id: string, sender: string, text: string, senderSex?: "Male" | "Female"): Promise<SharedRide | { error: string; status: number }> {
-  const ride = await loadRide(id);
-  if (!ride) return { error: "Ride not found", status: 404 };
-  if (ride.lifecycleStatus !== "Open") return { error: `This trip is ${ride.lifecycleStatus.toLowerCase()}; its chat is read-only`, status: 409 };
+export async function addMessage(id: string, sender: string, text: string, senderSex?: "Male" | "Female"): Promise<{ id: string; messages: ChatMessage[] } | { error: string; status: number }> {
+  const lifecycle = await getTripLifecycle(id);
+  if (!lifecycle) return { error: "Ride not found", status: 404 };
+  if (lifecycle !== "Open") return { error: `This trip is ${lifecycle.toLowerCase()}; its chat is read-only`, status: 409 };
   const trimmed = text.trim().slice(0, 500);
   if (!trimmed) return { error: "Message is empty", status: 400 };
   await supabaseRequest("lexride_trip_messages", {
     method: "POST",
     body: JSON.stringify({ trip_id: id, sender: sender.slice(0, 80), sender_sex: senderSex ?? null, text: trimmed }),
   }, true);
-  return (await loadRide(id)) as SharedRide;
+  return { id, messages: await listMessages(id) };
 }
