@@ -129,7 +129,7 @@ async function startServer() {
       const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
       const access = account ? await getTripChatAccess(req.params.id, account.id) : "none";
       const responseRide = access === "host" ? ride : access === "approved" ? redactApprovedRide(ride) : redactPublicRide(ride);
-      return res.json(responseRide);
+      return res.json({ ...responseRide, viewerRole: access });
     } catch (error) {
       console.error("[GetRide] Error:", error);
       return res.status(500).json({ error: String(error) });

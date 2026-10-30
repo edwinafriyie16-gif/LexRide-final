@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type Key } from "react";
 import {
+  ArrowLeft,
   ArrowRight,
   CalendarDays,
   Check,
+  CheckCheck,
   ChevronDown,
   Clock3,
   Copy,
+  EllipsisVertical,
   Loader2,
   MapPin,
   MessageCircle,
@@ -42,7 +45,7 @@ type Trip = {
 
 type GuestRequest = { id: string; name: string; sex: "Male" | "Female"; status: "Waiting" | "Approved" | "Declined" };
 type HostPendingRequest = GuestRequest & { tripId: string; from: string; to: string; date: string; time: string };
-type ChatMessage = { id: string; sender: string; text: string; mine?: boolean };
+type ChatMessage = { id: string; sender: string; text: string; createdAt?: number; mine?: boolean };
 type Account = { id: string; fullName: string; sex: "Male" | "Female" };
 type InboxMessage = { id: string; sender: string; text: string; createdAt: number };
 type InboxConversation = { id: string; from: string; to: string; date: string; time: string; seats: number; host: string; hostSex?: "Male" | "Female"; role: "created" | "joined"; lifecycleStatus: TripLifecycleStatus; messages: InboxMessage[]; lastActivity: number };
@@ -176,6 +179,25 @@ function decodeTripFromLink(value: string): Trip | null {
   } catch {
     return null;
   }
+}
+
+const SENDER_COLORS = ["#d6409f", "#e8741f", "#5b6cff", "#1f9d55", "#a24fd1", "#0b8aa6", "#c98a00", "#c4423f"];
+function senderColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return SENDER_COLORS[hash % SENDER_COLORS.length];
+}
+function dayLabel(timestamp: number): string {
+  const date = new Date(timestamp);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "Today";
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return date.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
+}
+function clockTime(timestamp?: number): string {
+  return timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
 }
 
 function Logo() {
@@ -485,6 +507,9 @@ export default function Home() {
   const [readMarks, setReadMarks] = useState<Record<string, number>>({});
   const [messageBanner, setMessageBanner] = useState<MessageBanner | null>(null);
   const [chatFrom, setChatFrom] = useState<"trips" | "messages">("trips");
+  const [chatIsHost, setChatIsHost] = useState(false);
+  const [chatMembers, setChatMembers] = useState<string[]>([]);
+  const [showChatMenu, setShowChatMenu] = useState(false);
   const readMarksRef = useRef<Record<string, number>>({});
   const inboxSeenRef = useRef<{ messages: Set<string>; trips: Set<string> } | null>(null);
   const viewRef = useRef(view);
@@ -589,10 +614,13 @@ export default function Home() {
           lifecycleStatus: room.lifecycleStatus || "Open",
         };
         setHistoryTrips((items) => items.map((item) => item.id === tripId ? { ...item, requestStatus: "Approved" } : item));
-        setChatMessages((room.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account.fullName })));
+        setChatMessages((room.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, createdAt: Number(message.createdAt) || undefined, mine: message.sender === account.fullName })));
         setJoinTrip(approvedTrip);
         setCreatedTrip(null);
         setJoinStage("room");
+        setChatIsHost(false);
+        setChatMembers([room.creatorName, ...(Array.isArray(room.joined) ? room.joined.filter((member: any) => member.status === "Approved").map((member: any) => member.firstName) : [])].filter(Boolean));
+        setShowChatMenu(false);
         setChatFrom("trips");
         setView("chat");
         toast.success("You’re approved. The trip group chat is ready.");
@@ -624,7 +652,7 @@ export default function Home() {
         if (newest) markRead(tripId, newest);
         setChatMessages((current) => {
           const pending = current.filter((message) => message.id.startsWith("tmp-"));
-          const server = data.messages.map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === me }));
+          const server = data.messages.map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, createdAt: Number(message.createdAt) || undefined, mine: message.sender === me }));
           const same = server.length + pending.length === current.length && server.every((message: ChatMessage, index: number) => current[index]?.id === message.id);
           return same ? current : [...server, ...pending];
         });
@@ -775,7 +803,7 @@ export default function Home() {
       if (trip) {
         setTrips((items) => [trip, ...items]);
         setCreatedTrip(trip);
-        setChatMessages((data.trip.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
+        setChatMessages((data.trip.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, createdAt: Number(message.createdAt) || undefined, mine: message.sender === account?.fullName })));
         setView("create");
       }
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not start today’s trip"); }
@@ -794,7 +822,7 @@ export default function Home() {
       setCreatedTrip(restored);
       setJoinTrip(null);
       setGuestRequests((ride.joined || []).filter((member: any) => ride.lifecycleStatus === "Open" && member.status === "Waiting").map((member: any) => ({ id: member.id, name: member.firstName, sex: member.sex, status: member.status })));
-      setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
+      setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, createdAt: Number(message.createdAt) || undefined, mine: message.sender === account?.fullName })));
       setView("create");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not load this trip"); }
   };
@@ -852,8 +880,11 @@ export default function Home() {
       const restored: Trip = { ...trip, id: ride.id, from: ride.fromLabel, to: ride.toLabel, date: ride.date || trip.date, time: ride.time, seats: Number(ride.seats) || trip.seats, joined: (Number(ride.activeMemberCount ?? ride.joined?.filter((member: any) => member.status !== "Declined").length) || 0) + 1, host: ride.creatorName || trip.host, hostSex: ride.creatorSex || trip.hostSex, lifecycleStatus: ride.lifecycleStatus || "Open" };
       setJoinTrip(restored);
       setCreatedTrip(null);
-      setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
+      setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, createdAt: Number(message.createdAt) || undefined, mine: message.sender === account?.fullName })));
       setJoinStage("room");
+      setChatIsHost(ride.viewerRole === "host");
+      setChatMembers([ride.creatorName, ...(Array.isArray(ride.joined) ? ride.joined.filter((member: any) => member.status === "Approved").map((member: any) => member.firstName) : [])].filter(Boolean));
+      setShowChatMenu(false);
       setChatFrom(from);
       setView("chat");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not load the trip room"); }
@@ -956,7 +987,7 @@ export default function Home() {
       let data: any = {};
       try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
       if (!response.ok) throw new Error(data.error || "Could not approve passenger");
-      setChatMessages((data.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
+      setChatMessages((data.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, createdAt: Number(message.createdAt) || undefined, mine: message.sender === account?.fullName })));
       setGuestRequests((items) => items.map((item) => item.id === request.id ? { ...item, status: "Approved" } : item));
       setHostRequests((items) => items.filter((item) => item.id !== request.id));
       setTrips((items) => items.map((item) => item.id === createdTrip.id ? { ...item, joined: Math.min(item.seats, item.joined + 1), status: item.joined + 1 >= item.seats ? "Full" : "Almost full" } : item));
@@ -991,7 +1022,7 @@ export default function Home() {
       let data: any = {};
       try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
       if (!response.ok) throw new Error(data.error || `Could not ${status.toLowerCase()} passenger`);
-      if (createdTrip?.id === request.tripId) setChatMessages((data.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
+      if (createdTrip?.id === request.tripId) setChatMessages((data.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, createdAt: Number(message.createdAt) || undefined, mine: message.sender === account?.fullName })));
       setHostRequests((items) => items.filter((item) => item.id !== request.id));
       setGuestRequests((items) => items.map((item) => item.id === request.id ? { ...item, status } : item));
       if (status === "Approved") {
@@ -1009,10 +1040,10 @@ export default function Home() {
   };
 
   const updateTripLifecycle = async (status: Exclude<TripLifecycleStatus, "Open">) => {
-    const trip = createdTrip;
+    const trip = view === "chat" ? joinTrip : createdTrip;
     if (!trip || tripLifecycleBusy || (trip.lifecycleStatus && trip.lifecycleStatus !== "Open")) return;
     const prompt = status === "Finished"
-      ? "Mark this trip as finished? New join requests, approvals, and messages will stop, but the trip history remains available."
+      ? "End this trip? New join requests, approvals, and messages will stop, but the chat history stays available."
       : "Cancel this trip? New join requests, approvals, and messages will stop. This cannot be undone.";
     if (!window.confirm(prompt)) return;
     setTripLifecycleBusy(true);
@@ -1040,14 +1071,14 @@ export default function Home() {
     const activeTrip = joinTrip || createdTrip;
     if (!text || !activeTrip) return;
     const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    setChatMessages((current) => [...current, { id: tempId, sender: account?.fullName || "You", text, mine: true }]);
+    setChatMessages((current) => [...current, { id: tempId, sender: account?.fullName || "You", text, createdAt: Date.now(), mine: true }]);
     setChatDraft("");
     try {
       const response = await fetch("/api/chat-message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tripId: activeTrip.id, text }) });
       const ride = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(ride.error || `Message could not be sent (${response.status})`);
       if (!Array.isArray(ride.messages)) throw new Error("The chat response was incomplete. Refresh the trip and try again.");
-      setChatMessages((current) => [...ride.messages.map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })), ...current.filter((message) => message.id.startsWith("tmp-") && message.id !== tempId)]);
+      setChatMessages((current) => [...ride.messages.map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, createdAt: Number(message.createdAt) || undefined, mine: message.sender === account?.fullName })), ...current.filter((message) => message.id.startsWith("tmp-") && message.id !== tempId)]);
     } catch (error) {
       setChatMessages((current) => current.filter((message) => message.id !== tempId));
       setChatDraft((draft) => draft || text);
@@ -1093,7 +1124,7 @@ export default function Home() {
       };
       setTrips((items) => [trip, ...items]);
       setCreatedTrip(trip);
-      setChatMessages((sharedRide.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account.fullName })));
+      setChatMessages((sharedRide.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, createdAt: Number(message.createdAt) || undefined, mine: message.sender === account.fullName })));
       setHistoryTrips((items) => [{ ...trip, role: "created" as const }, ...items.filter((item) => item.id !== trip.id)]);
       return;
     } catch (error) {
@@ -1158,7 +1189,7 @@ export default function Home() {
         </button>
         <button type="button" className="msg-banner-close" aria-label="Dismiss message alert" onClick={() => setMessageBanner(null)}><X className="h-4 w-4" /></button>
       </div>}
-      <header className="site-header">
+      {view !== "chat" && <header className="site-header">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 lg:px-8">
           <button onClick={() => { setView("home"); setCreatedTrip(null); }} aria-label="LexRide home"><Logo /></button>
           <nav className="hidden items-center gap-1 md:flex">
@@ -1169,11 +1200,11 @@ export default function Home() {
           <div className="hidden items-center gap-2 md:flex">{account ? <button className="button-soft !gap-2 !px-3 !py-2" onClick={() => setShowProfile(true)}><span className="avatar !h-7 !w-7 !bg-[#0f172a] !text-[11px] !text-white">{account.fullName.slice(0, 1).toUpperCase()}</span><span className="text-xs font-bold text-ink">{account.fullName}</span></button> : <><button className="button-soft !px-3 !py-2 text-sm" onClick={() => openAuth("signin")}>Sign in</button></>}<button className="button-dark !rounded-xl !px-4 !py-2.5 text-sm" onClick={() => { if (!account) { openAuth("signin"); return; } setView("create"); setCreatedTrip(null); }}><Plus className="mr-1.5 h-4 w-4" /> Create a trip</button></div>
           <div className="flex items-center gap-2 md:hidden">{account ? <button type="button" className="icon-button !h-10 !w-10 !rounded-full !border-ink !bg-[#0f172a] !text-white" onClick={() => setShowProfile(true)} aria-label="Open profile"><span className="text-sm font-bold">{account.fullName.slice(0, 1).toUpperCase()}</span></button> : <><button type="button" className="button-soft !rounded-xl !px-3 !py-2 text-xs" onClick={() => openAuth("signin")}>Sign in</button><button type="button" className="button-dark !rounded-xl !px-3 !py-2 text-xs" onClick={() => openAuth("signup")}>Join</button></>}</div>
         </div>
-      </header>
+      </header>}
 
       {account && view !== "chat" && visibleHostRequests.length > 0 && <div className="mx-auto max-w-6xl px-5 pt-3 lg:px-8"><button type="button" onClick={() => setShowRequests(true)} className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[#bfdbfe] bg-[#eff6ff] px-4 py-3 text-left"><span className="flex items-center gap-3"><span className="nav-count !h-6 !min-w-6 !text-xs">{visibleHostRequests.length}</span><span className="text-sm font-semibold text-ink">{visibleHostRequests.length === 1 ? "1 person wants to join your trip" : `${visibleHostRequests.length} people want to join your trips`}</span></span><span className="text-xs font-bold text-terracotta">Review <ArrowRight className="ml-0.5 inline h-3.5 w-3.5" /></span></button></div>}
 
-      <main className={view === "chat" ? "mx-auto flex w-full max-w-6xl flex-col px-3 pt-2 lg:px-8" : "mx-auto max-w-6xl px-5 pb-28 pt-6 md:pb-16 md:pt-8 lg:px-8 lg:pt-14"} style={view === "chat" ? { height: "calc(100dvh - 72px)", minHeight: 0 } : undefined}>
+      <main className={view === "chat" ? "" : "mx-auto max-w-6xl px-5 pb-28 pt-6 md:pb-16 md:pt-8 lg:px-8 lg:pt-14"}>
         {view === "home" && <>
           {account && <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div><h1 className="font-display text-3xl font-bold tracking-[-0.04em] md:text-5xl">Hi {account.fullName.split(" ")[0]}, where to?</h1></div>
@@ -1221,31 +1252,56 @@ export default function Home() {
         </section>}
 
         {view === "chat" && !joinTrip && <section className="py-4 md:py-10"><div className="empty-state mx-auto mt-8 max-w-xl"><MessageCircle className="mx-auto h-8 w-8 text-terracotta" /><h1 className="mt-3 font-display text-2xl font-bold">Trip chat unavailable</h1><p className="mt-2 text-sm leading-6 text-slate">We couldn’t restore this trip room. Open an approved trip from your trips list to continue chatting.</p><button type="button" className="button-primary mt-5" onClick={() => setView("trips")}>Go to My Trips</button></div></section>}
-        {view === "chat" && joinTrip && <section className="flex min-h-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-center gap-3 border-b border-line pb-3">
-            <button type="button" className="back-link shrink-0" onClick={() => { setView(chatFrom); setJoinTrip(null); }}>{chatFrom === "messages" ? "← Messages" : "← Trips"}</button>
-            <div className="min-w-0 flex-1">
-              <h1 className="truncate font-display text-base font-bold text-ink sm:text-lg">{joinTrip.from} → {joinTrip.to}</h1>
-              <p className="truncate text-[11px] text-slate">{joinTrip.date} · {joinTrip.time} · {joinTrip.host}</p>
+        {view === "chat" && joinTrip && (() => {
+          const me = account?.fullName;
+          const closed = joinTrip.lifecycleStatus !== "Open";
+          const others = Array.from(new Set<string>(chatMembers.filter((name) => name !== me))).sort((a, b) => a.localeCompare(b));
+          const subtitle = others.length || me ? [...(me ? ["You"] : []), ...others].join(", ") : `${joinTrip.joined} members`;
+          let previous: ChatMessage | undefined;
+          const rows = chatMessages.map((message) => {
+            const system = message.sender === "LexRide";
+            const newDay = !!message.createdAt && (!previous?.createdAt || new Date(previous.createdAt).toDateString() !== new Date(message.createdAt).toDateString());
+            const first = !system && (!previous || previous.sender !== message.sender || previous.sender === "LexRide" || newDay);
+            previous = message;
+            return { message, system, newDay, first };
+          });
+          return <section className="wa-screen">
+            <header className="wa-header">
+              <button type="button" className="wa-icon-btn" aria-label={chatFrom === "messages" ? "Back to messages" : "Back to trips"} onClick={() => { setShowChatMenu(false); setView(chatFrom); setJoinTrip(null); }}><ArrowLeft className="h-6 w-6" /></button>
+              <span className="wa-avatar"><Users className="h-5 w-5" /></span>
+              <div className="min-w-0 flex-1">
+                <h1 className="wa-title">{joinTrip.from} → {joinTrip.to}</h1>
+                <p className="wa-subtitle">{closed ? (joinTrip.lifecycleStatus === "Cancelled" ? "Trip cancelled" : "Trip ended") + " · " : ""}{subtitle}</p>
+              </div>
+              {chatIsHost && !closed && <div className="relative">
+                <button type="button" className="wa-icon-btn" aria-label="Trip options" aria-expanded={showChatMenu} onClick={() => setShowChatMenu((open) => !open)}><EllipsisVertical className="h-5 w-5" /></button>
+                {showChatMenu && <><button type="button" className="wa-menu-backdrop" aria-label="Close menu" onClick={() => setShowChatMenu(false)} /><div className="wa-menu" role="menu">
+                  <button type="button" role="menuitem" disabled={tripLifecycleBusy} onClick={() => { setShowChatMenu(false); void updateTripLifecycle("Finished"); }}>End trip</button>
+                  <button type="button" role="menuitem" className="wa-menu-danger" disabled={tripLifecycleBusy} onClick={() => { setShowChatMenu(false); void updateTripLifecycle("Cancelled"); }}>Cancel trip</button>
+                </div></>}
+              </div>}
+            </header>
+            <div ref={chatScrollRef} role="log" aria-live="polite" aria-relevant="additions text" className="wa-body">
+              <div className="wa-notice"><ShieldCheck className="mr-1 inline h-3.5 w-3.5 align-[-2px]" />Only the host and approved passengers can see this chat. Meet in a public place.</div>
+              {rows.map(({ message, system, newDay, first }) => <div key={message.id} className="contents">
+                {newDay && message.createdAt && <div className="wa-day">{dayLabel(message.createdAt)}</div>}
+                {system ? <div className="wa-system">{message.text}</div> : <div className={`wa-row ${message.mine ? "wa-row-out" : "wa-row-in"} ${first ? "wa-row-first" : ""}`}>
+                  <div className={`wa-bubble ${message.mine ? "wa-out" : "wa-in"} ${first ? "wa-first" : ""}`}>
+                    {!message.mine && first && <div className="wa-sender" style={{ color: senderColor(message.sender) }}>{message.sender}</div>}
+                    <span className="wa-text">{message.text}</span>
+                    <span className="wa-meta">{clockTime(message.createdAt)}{message.mine && (message.id.startsWith("tmp-") ? <Clock3 className="h-3 w-3" aria-label="Sending" /> : <CheckCheck className="h-4 w-4 wa-tick" aria-label="Sent" />)}</span>
+                  </div>
+                </div>}
+              </div>)}
+              {chatMessages.length === 0 && <p className="m-auto py-8 text-center text-sm text-slate">No messages yet. Say hello.</p>}
             </div>
-            <span className="status-pill status-green hidden sm:inline-flex">Approved member</span>
-          </div>
-          <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3 md:px-5">
-              <div><div className="eyebrow">Group chat</div><h2 className="mt-1 font-display text-lg font-bold text-ink">Coordinate the journey</h2></div>
-              <span className="text-right text-[11px] leading-4 text-slate">Meet in a<br className="sm:hidden" /> public place</span>
-            </div>
-            <div ref={chatScrollRef} role="log" aria-live="polite" aria-relevant="additions text" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain bg-sand p-3 md:p-5">
-              {chatMessages.map((message) => <div key={message.id} className={`flex ${message.mine ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] break-words rounded-2xl px-4 py-3 text-sm ${message.mine ? "bg-ink text-white" : "bg-white text-ink shadow-sm"}`}><div className="mb-1 text-[10px] font-bold opacity-60">{message.sender}</div>{message.text}</div></div>)}
-              {chatMessages.length === 0 && <p className="m-auto py-8 text-center text-sm text-slate">No messages yet. Start the conversation.</p>}
-            </div>
-            <form onSubmit={(event) => { event.preventDefault(); void sendChatMessage(); }} className="flex shrink-0 items-center gap-2 border-t border-line bg-white p-3 md:p-4" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
-              <input type="text" value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} disabled={joinTrip.lifecycleStatus !== "Open"} autoComplete="off" aria-label="Message to the trip group" className="field-input !mt-0 min-w-0 flex-1" placeholder={joinTrip.lifecycleStatus === "Open" ? "Message the trip group…" : "Trip chat is read-only"} />
-              <button type="submit" disabled={!chatDraft.trim() || joinTrip.lifecycleStatus !== "Open"} aria-label={chatSending ? "Sending message" : joinTrip.lifecycleStatus !== "Open" ? "Trip chat is read-only" : "Send message"} className="button-primary h-11 shrink-0 !px-4 disabled:cursor-not-allowed disabled:opacity-50">{chatSending ? <span className="text-xs">Sending…</span> : <Send className="h-4 w-4" />}</button>
-            </form>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5 py-2 text-[10px] text-slate"><ShieldCheck className="h-3.5 w-3.5 text-forest" /> Trip chat is only for the host and approved passengers.</div>
-        </section>}
+            {closed ? <div className="wa-closed">{joinTrip.lifecycleStatus === "Cancelled" ? "The host cancelled this trip." : "The host ended this trip."} You can read the chat, but no one can send new messages.</div>
+              : <form onSubmit={(event) => { event.preventDefault(); void sendChatMessage(); }} className="wa-composer" style={{ paddingBottom: "max(8px, env(safe-area-inset-bottom))" }}>
+                <input type="text" value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} autoComplete="off" aria-label="Message to the trip group" className="wa-input" placeholder="Message" />
+                <button type="submit" disabled={!chatDraft.trim()} aria-label="Send message" className="wa-send"><Send className="h-5 w-5" /></button>
+              </form>}
+          </section>;
+        })()}
         {view === "messages" && <section className="py-4 md:py-10"><h1 className="font-display text-3xl font-bold tracking-[-0.04em] md:text-5xl">Messages</h1>{!account ? <div className="empty-state mt-8 max-w-2xl"><h3 className="font-display text-xl font-bold">Sign in to see your messages</h3><p className="mt-1 text-sm text-slate">Your trip group chats appear here.</p><button className="button-primary mt-4" onClick={() => openAuth("signin")}>Sign in</button></div> : !inboxLoaded ? <p className="mt-8 flex items-center gap-2 text-sm text-slate"><Loader2 className="h-4 w-4 animate-spin" /> Loading your chats…</p> : <div className="mt-6 grid max-w-3xl gap-2">{inbox.map((conversation) => { const last = conversation.messages[conversation.messages.length - 1]; const unread = unreadCount(conversation); return <button key={conversation.id} type="button" className={`convo ${unread > 0 ? "convo-unread" : ""}`} onClick={() => openConversation(conversation)}><span className="convo-icon"><MessageCircle className="h-5 w-5" /></span><span className="min-w-0 flex-1 text-left"><span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-bold text-ink">{conversation.from} → {conversation.to}</span><span className="shrink-0 text-[11px] text-slate">{last ? formatMessageTime(last.createdAt) : ""}</span></span><span className="mt-0.5 block truncate text-[11px] text-slate">{conversation.date} · {conversation.time} · {conversation.role === "created" ? "You started this" : `Host: ${conversation.host}`}{conversation.lifecycleStatus !== "Open" ? ` · ${conversation.lifecycleStatus}` : ""}</span><span className="mt-1 flex items-center justify-between gap-2"><span className={`truncate text-sm ${unread > 0 ? "font-bold text-ink" : "text-slate"}`}>{last ? `${last.sender === account.fullName ? "You" : last.sender}: ${last.text}` : "No messages yet. Say hello."}</span>{unread > 0 && <span className="convo-badge">{unread > 9 ? "9+" : unread}</span>}</span></span></button>; })}{inbox.length === 0 && <div className="empty-state"><h3 className="font-display text-xl font-bold">No chats yet</h3><p className="mt-1 text-sm text-slate">When you start a trip or a host approves you, its group chat shows up here.</p><button className="button-primary mt-4" onClick={() => setView("home")}>Find a trip</button></div>}</div>}</section>}
 
         {view === "trips" && <section className="py-4 md:py-10"><h1 className="font-display text-3xl font-bold tracking-[-0.04em] md:text-5xl">My trips</h1>{!account ? <div className="empty-state mt-8 max-w-2xl"><h3 className="font-display text-xl font-bold">Sign in to see your trips</h3><button className="button-primary mt-4" onClick={() => openAuth("signin")}>Sign in</button></div> : <><div className="mt-8"><div className="mt-4 grid max-w-3xl gap-3">{historyTrips.map((trip) => <div key={trip.id} className="trip-card"><div className="flex items-start justify-between gap-3"><div><RouteLine from={trip.from} to={trip.to} /><div className="mt-3 text-xs text-slate">{trip.date} · {trip.time} · {trip.role === "created" ? "You started this" : "You joined this"}</div></div><span className={`status-pill ${trip.lifecycleStatus === "Cancelled" || trip.requestStatus === "Closed" || trip.requestStatus === "Declined" ? "status-full" : trip.lifecycleStatus === "Finished" ? "status-warm" : trip.role === "created" || trip.requestStatus === "Approved" ? "status-green" : "status-warm"}`}>{trip.lifecycleStatus && trip.lifecycleStatus !== "Open" ? trip.lifecycleStatus : trip.role === "created" ? "Created" : trip.requestStatus === "Approved" ? "Approved" : trip.requestStatus === "Declined" ? "Declined" : trip.requestStatus === "Closed" ? "Closed" : "Waiting"}</span></div><div className="mt-4 flex items-center justify-between"><span className="text-xs text-slate">Host: <strong className="text-ink">{trip.host}</strong></span>{trip.role === "created" || trip.requestStatus === "Approved" || ((trip.requestStatus !== "Declined" && trip.requestStatus !== "Closed") && (trip.lifecycleStatus || "Open") === "Open") ? <button className="button-soft !px-3 !py-2 text-xs" onClick={() => trip.role === "created" ? openHistoryTrip(trip) : join(trip, trip.requestStatus)}>Open trip</button> : <span className="text-xs font-semibold text-slate">Request closed</span>}</div></div>)}{historyTrips.length === 0 && <div className="empty-state"><h3 className="font-display text-xl font-bold">No trips yet</h3><p className="mt-1 text-sm text-slate">Create a trip or join someone going your way.</p><button className="button-primary mt-4" onClick={() => setView("create")}>Create a trip</button></div>}</div></div></>}</section>}

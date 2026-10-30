@@ -321,6 +321,8 @@ export async function setRideLifecycleStatus(id: string, accountId: string, stat
       true,
     );
     if (latest[0]?.lifecycle_status !== status) return { error: "The trip status changed before this action could be saved", status: 409 };
+  } else {
+    await recordSystemMessage(id, status === "Finished" ? "The host ended this trip. This chat is now read-only." : "The host cancelled this trip. This chat is now read-only.");
   }
   const ride = await loadRide(id);
   return ride || { error: "Trip not found", status: 404 };

@@ -39,7 +39,7 @@ export default async function handler(req: any, res: any) {
       const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
       const access = account ? await getTripChatAccess(parts[0], account.id) : "none";
       const responseRide = access === "host" ? ride : access === "approved" ? redactApprovedRide(ride) : redactPublicRide(ride);
-      return res.status(200).json(responseRide);
+      return res.status(200).json({ ...responseRide, viewerRole: access });
     }
     if (parts.length === 2 && parts[1] === "join" && req.method === "POST") {
       const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
