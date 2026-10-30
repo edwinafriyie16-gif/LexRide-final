@@ -2,7 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { randomBytes } from "crypto";
-import { addMessage, canAccessTripChat, createRide, getRide, getRideCreatorAccountId, getTripChatAccess, joinRide, redactApprovedRide, redactPublicRide, setMemberStatus, setRideLifecycleStatus } from "./api/_rideStore.js";
+import { addMessage, canAccessTripChat, createRide, getRide, getRideCreatorAccountId, getTripChatAccess, joinRide, listNearbyRides, redactApprovedRide, redactPublicRide, setMemberStatus, setRideLifecycleStatus } from "./api/_rideStore.js";
 import { deleteSession, getAccountFromToken, readCookie, signIn, signUp } from "./api/_authStore.js";
 
 interface SharedRideJoiner {
@@ -89,13 +89,32 @@ async function startServer() {
   });
 
   // Shared rides use the same Supabase-backed store as the Vercel handlers.
+  app.get("/api/rides", async (req, res) => {
+    try {
+      const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
+      if (!account) return res.status(401).json({ error: "Sign in required" });
+      const num = (v: any) => (v === undefined || v === "" ? undefined : Number(v));
+      const lat = num(req.query.lat), lng = num(req.query.lng), toLat = num(req.query.toLat), toLng = num(req.query.toLng);
+      const valid = (a?: number, b?: number) => a !== undefined && b !== undefined && Number.isFinite(a) && Number.isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180;
+      if (!valid(lat, lng)) return res.status(400).json({ error: "Your location is required" });
+      const hasDest = valid(toLat, toLng);
+      const radiusKm = Math.min(15, Math.max(1, num(req.query.radiusKm) || 5));
+      const trips = await listNearbyRides({ lat: lat!, lng: lng!, toLat: hasDest ? toLat : undefined, toLng: hasDest ? toLng : undefined, radiusKm, destRadiusKm: 3, excludeAccountId: account.id });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.json({ trips });
+    } catch (error) {
+      console.error("[NearbyRides] Error:", error);
+      return res.status(500).json({ error: "Could not load nearby trips" });
+    }
+  });
+
   app.post("/api/rides", async (req, res) => {
     try {
       const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
       if (!account) return res.status(401).json({ error: "Sign in required" });
-      const { fromLabel, toLabel, toLat, toLng, date, time, seats, platform } = req.body || {};
+      const { fromLabel, toLabel, fromLat, fromLng, toLat, toLng, date, time, seats, platform } = req.body || {};
       if (!fromLabel || !toLabel || !time) return res.status(400).json({ error: "Missing required ride fields" });
-      return res.json(await createRide({ fromLabel, toLabel, toLat, toLng, date, time, seats, platform, creatorName: account.fullName, creatorSex: account.sex, creatorAccountId: account.id }));
+      return res.json(await createRide({ fromLabel, toLabel, fromLat, fromLng, toLat, toLng, date, time, seats, platform, creatorName: account.fullName, creatorSex: account.sex, creatorAccountId: account.id }));
     } catch (error) {
       console.error("[CreateRide] Error:", error);
       return res.status(500).json({ error: String(error) });

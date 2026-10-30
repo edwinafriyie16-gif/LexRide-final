@@ -43,6 +43,8 @@ type TripRow = {
   to_label: string;
   to_lat: number | null;
   to_lng: number | null;
+  from_lat?: number | null;
+  from_lng?: number | null;
   date: string | null;
   time: string;
   seats: number;
@@ -157,6 +159,8 @@ async function loadRide(id: string): Promise<SharedRide | undefined> {
 export async function createRide(input: {
   fromLabel: string;
   toLabel: string;
+  fromLat?: number;
+  fromLng?: number;
   toLat?: number;
   toLng?: number;
   date?: string;
@@ -177,6 +181,8 @@ export async function createRide(input: {
       to_label: input.toLabel,
       to_lat: input.toLat ?? null,
       to_lng: input.toLng ?? null,
+      from_lat: roundCoord(input.fromLat),
+      from_lng: roundCoord(input.fromLng),
       date: input.date ?? null,
       time: input.time,
       seats: Number(input.seats) || 3,
@@ -191,6 +197,84 @@ export async function createRide(input: {
   const ride = await loadRide(tripId);
   if (!ride) throw new Error("Ride was created but could not be loaded");
   return ride;
+}
+
+function roundCoord(value: unknown): number | null {
+  const n = Number(value);
+  return value === undefined || value === null || !Number.isFinite(n) ? null : Math.round(n * 100) / 100;
+}
+
+function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const rad = Math.PI / 180;
+  const dLat = (bLat - aLat) * rad;
+  const dLng = (bLng - aLng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(aLat * rad) * Math.cos(bLat * rad) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+const bucketKm = (km: number) => Math.max(0.5, Math.ceil(km * 2) / 2);
+
+export interface NearbyRide {
+  id: string;
+  fromLabel: string;
+  toLabel: string;
+  date?: string;
+  time: string;
+  seats: number;
+  joined: number;
+  creatorName: string;
+  creatorSex?: "Male" | "Female";
+  startKm: number;
+  endKm?: number;
+}
+
+// Open trips starting near (lat,lng) and, optionally, ending near (toLat,toLng).
+// Only coarse, bucketed distances are returned; stored coordinates are never exposed.
+export async function listNearbyRides(input: { lat: number; lng: number; toLat?: number; toLng?: number; radiusKm: number; destRadiusKm: number; excludeAccountId?: string }): Promise<NearbyRide[]> {
+  const { lat, lng, radiusKm } = input;
+  const dLat = radiusKm / 111;
+  const dLng = radiusKm / (111 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const nowHm = now.toISOString().slice(11, 16);
+  const trips = await supabaseRequest<TripRow[]>(
+    `lexride_trip_rooms?lifecycle_status=eq.Open&date=gte.${today}&from_lat=gte.${lat - dLat}&from_lat=lte.${lat + dLat}&from_lng=gte.${lng - dLng}&from_lng=lte.${lng + dLng}&select=*&order=date.asc,time.asc&limit=100`,
+  );
+  const candidates = trips.filter((trip) => {
+    if (input.excludeAccountId && trip.creator_account_id === input.excludeAccountId) return false;
+    if (trip.date === today && trip.time < nowHm) return false;
+    if (trip.from_lat == null || trip.from_lng == null) return false;
+    if (haversineKm(lat, lng, trip.from_lat, trip.from_lng) > radiusKm) return false;
+    if (input.toLat !== undefined && input.toLng !== undefined) {
+      if (trip.to_lat == null || trip.to_lng == null) return false;
+      if (haversineKm(input.toLat, input.toLng, trip.to_lat, trip.to_lng) > input.destRadiusKm) return false;
+    }
+    return true;
+  });
+  if (candidates.length === 0) return [];
+  const ids = candidates.map((trip) => encodeURIComponent(trip.id)).join(",");
+  const members = await supabaseRequest<MemberRow[] & { trip_id?: string }[]>(`lexride_trip_members?trip_id=in.(${ids})&status=neq.Declined&select=*&limit=1000`);
+  const byTrip = new Map<string, MemberRow[]>();
+  for (const member of members as any[]) byTrip.set(member.trip_id, [...(byTrip.get(member.trip_id) || []), member]);
+  const results: NearbyRide[] = [];
+  for (const trip of candidates) {
+    const joined = deduplicateMembers(byTrip.get(trip.id) || []).filter((member) => member.status !== "Declined").length + 1;
+    if (joined >= trip.seats) continue;
+    results.push({
+      id: trip.id,
+      fromLabel: trip.from_label,
+      toLabel: trip.to_label,
+      date: trip.date ?? undefined,
+      time: trip.time,
+      seats: trip.seats,
+      joined,
+      creatorName: trip.creator_name,
+      creatorSex: trip.creator_sex ?? undefined,
+      startKm: bucketKm(haversineKm(lat, lng, trip.from_lat!, trip.from_lng!)),
+      endKm: input.toLat !== undefined && input.toLng !== undefined && trip.to_lat != null && trip.to_lng != null ? bucketKm(haversineKm(input.toLat, input.toLng, trip.to_lat, trip.to_lng)) : undefined,
+    });
+  }
+  return results.sort((a, b) => (a.date || "").localeCompare(b.date || "") || a.time.localeCompare(b.time) || a.startKm - b.startKm).slice(0, 20);
 }
 
 export async function getRide(id: string): Promise<SharedRide | undefined> {

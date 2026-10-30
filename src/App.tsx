@@ -326,7 +326,7 @@ function RouteMap({ from, to, fromLocation, toLocation }: { from: string; to: st
   );
 }
 
-function TripCard({ trip, onJoin, onShare }: { trip: Trip; onJoin: (trip: Trip) => void; onShare: (trip: Trip) => void; key?: Key }) {
+function TripCard({ trip, onJoin, onShare, note }: { trip: Trip; onJoin: (trip: Trip) => void; onShare: (trip: Trip) => void; note?: string; key?: Key }) {
   const full = trip.joined >= trip.seats;
   const lifecycleStatus = trip.lifecycleStatus || "Open";
   const closed = lifecycleStatus !== "Open";
@@ -335,6 +335,7 @@ function TripCard({ trip, onJoin, onShare }: { trip: Trip; onJoin: (trip: Trip) 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <RouteLine from={trip.from} to={trip.to} />
+          {note && <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#eef7f0] px-2.5 py-1 text-[11px] font-semibold text-forest"><Navigation className="h-3 w-3" />{note}</div>}
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-slate">
             <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5 text-terracotta" />{trip.date}</span>
             <span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5 text-terracotta" />{trip.time}</span>
@@ -438,6 +439,11 @@ export default function Home() {
   const [pendingJoin, setPendingJoin] = useState<Trip | null>(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showRequests, setShowRequests] = useState(false);
+  const [nearbyStatus, setNearbyStatus] = useState<"idle" | "locating" | "loading" | "ready" | "error">("idle");
+  const [nearbyTrips, setNearbyTrips] = useState<Array<{ trip: Trip; note: string }>>([]);
+  const [nearbyCoords, setNearbyCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [nearbyDest, setNearbyDest] = useState<LocationSuggestion | undefined>();
+  const [nearbyDestText, setNearbyDestText] = useState("");
   const [historyTrips, setHistoryTrips] = useState<HistoryTrip[]>([]);
   const [commuteGroups, setCommuteGroups] = useState<CommuteGroup[]>([]);
   const [hostRequests, setHostRequests] = useState<HostPendingRequest[]>([]);
@@ -636,6 +642,38 @@ export default function Home() {
       setChatMessages((ride.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, mine: message.sender === account?.fullName })));
       setView("create");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not load this trip"); }
+  };
+
+  const loadNearby = async (coords: { lat: number; lng: number }, dest?: LocationSuggestion) => {
+    setNearbyStatus("loading");
+    try {
+      const params = new URLSearchParams({ lat: String(coords.lat), lng: String(coords.lng) });
+      if (dest) { params.set("toLat", String(dest.geometry.location.lat)); params.set("toLng", String(dest.geometry.location.lng)); }
+      const response = await fetch(`/api/rides?${params}`, { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401) { setNearbyStatus("idle"); openAuth("signin"); return; }
+      if (!response.ok) throw new Error(data.error || "Could not load nearby trips");
+      const km = (value: number) => (value <= 0.5 ? "under 500 m" : `about ${value} km`);
+      setNearbyTrips((data.trips || []).map((ride: any) => ({
+        trip: { id: ride.id, from: ride.fromLabel, to: ride.toLabel, date: ride.date ? new Date(`${ride.date}T00:00:00`).toLocaleDateString("en-GH", { weekday: "short", day: "2-digit", month: "short" }) : "Soon", time: ride.time, seats: Number(ride.seats), joined: Number(ride.joined), contribution: 0, meetingPoint: "Choose together", host: ride.creatorName, hostSex: ride.creatorSex, status: "Open" as const, lifecycleStatus: "Open" as const },
+        note: ride.endKm !== undefined ? `Starts ${km(ride.startKm)} from you · ends ${km(ride.endKm)} from your stop` : `Starts ${km(ride.startKm)} from you`,
+      })));
+      setNearbyStatus("ready");
+    } catch (error) {
+      setNearbyStatus("error");
+      toast.error(error instanceof Error ? error.message : "Could not load nearby trips");
+    }
+  };
+
+  const findNearby = () => {
+    if (!account) { openAuth("signin"); return; }
+    if (!navigator.geolocation) { toast.error("Location is not available on this device."); return; }
+    setNearbyStatus("locating");
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => { const here = { lat: coords.latitude, lng: coords.longitude }; setNearbyCoords(here); void loadNearby(here, nearbyDest); },
+      () => { setNearbyStatus("idle"); toast.error("We couldn’t get your location. Allow location access in your browser, then try again."); },
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 },
+    );
   };
 
   const shareTrip = (trip: Trip) => {
@@ -863,7 +901,7 @@ export default function Home() {
       return;
     }
     try {
-      const response = await fetch("/api/create-ride", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fromLabel: form.from, toLabel: form.to, toLat: selectedLocations.to.geometry.location.lat, toLng: selectedLocations.to.geometry.location.lng, time: form.time, date: form.date, seats: Number(form.seats), platform: "Passenger arranged" }) });
+      const response = await fetch("/api/create-ride", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fromLabel: form.from, toLabel: form.to, fromLat: selectedLocations.from.geometry.location.lat, fromLng: selectedLocations.from.geometry.location.lng, toLat: selectedLocations.to.geometry.location.lat, toLng: selectedLocations.to.geometry.location.lng, time: form.time, date: form.date, seats: Number(form.seats), platform: "Passenger arranged" }) });
       const raw = await response.text();
       let data: any = {};
       try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
@@ -986,6 +1024,20 @@ export default function Home() {
             </div>
           </section>
           </>}
+
+          <section aria-label="Going your way" className="mt-8 rounded-3xl border border-line bg-white p-5 md:p-6">
+            <div className="flex items-start justify-between gap-3"><div><div className="eyebrow">Going your way</div><h2 className="mt-1 font-display text-2xl font-bold tracking-[-0.03em]">People near you, heading where you’re heading</h2></div></div>
+            {nearbyStatus === "idle" && <><p className="mt-2 max-w-lg text-sm leading-6 text-slate">See open trips that start close to you. We only use your location to find matches and never show it to anyone.</p><button type="button" className="button-primary mt-4 w-full sm:w-auto" onClick={findNearby}><Navigation className="mr-2 h-4 w-4" /> Find trips near me</button></>}
+            {nearbyStatus === "locating" && <p className="mt-4 flex items-center gap-2 text-sm text-slate"><Loader2 className="h-4 w-4 animate-spin" /> Finding your location…</p>}
+            {(nearbyStatus === "loading" || nearbyStatus === "ready" || nearbyStatus === "error") && <>
+              <div className="mt-4"><LocationInput label="Where are you going? (optional)" value={nearbyDestText} placeholder="e.g. KNUST or Kejetia" onChange={(value) => { setNearbyDestText(value); if (nearbyDest) { setNearbyDest(undefined); if (nearbyCoords) void loadNearby(nearbyCoords); } }} onSelect={(place) => { setNearbyDestText(place.name); setNearbyDest(place); if (nearbyCoords) void loadNearby(nearbyCoords, place); }} /></div>
+              {nearbyStatus === "loading" && <p className="mt-4 flex items-center gap-2 text-sm text-slate"><Loader2 className="h-4 w-4 animate-spin" /> Looking for trips…</p>}
+              {nearbyStatus === "error" && <button type="button" className="button-soft mt-4" onClick={() => nearbyCoords ? void loadNearby(nearbyCoords, nearbyDest) : findNearby()}>Try again</button>}
+              {nearbyStatus === "ready" && nearbyTrips.length > 0 && <div className="mt-4 grid gap-4 lg:grid-cols-3">{nearbyTrips.map(({ trip, note }) => <TripCard key={trip.id} trip={trip} note={note} onJoin={join} onShare={shareTrip} />)}</div>}
+              {nearbyStatus === "ready" && nearbyTrips.length === 0 && <div className="mt-4 rounded-2xl bg-sand p-5 text-center"><h3 className="font-display text-lg font-bold">No one’s going your way yet</h3><p className="mt-1 text-sm text-slate">Be the first. Start a trip and share it on WhatsApp, and people nearby will see it here.</p><button type="button" className="button-primary mt-4" onClick={() => { if (!account) { openAuth("signin"); return; } setView("create"); setCreatedTrip(null); }}><Plus className="mr-2 h-4 w-4" /> Create a trip</button></div>}
+              <button type="button" className="mt-3 text-xs font-semibold text-terracotta underline" onClick={findNearby}>Refresh my location</button>
+            </>}
+          </section>
 
           <section id="trip-board" className={`${account ? "mt-6" : "mt-16 md:mt-24"} scroll-mt-20`}>
             <div className="section-heading"><div><div className="eyebrow">Open trips near you</div><h2 className="mt-2 font-display text-3xl font-bold tracking-[-0.04em] md:text-4xl">Find your people.</h2></div><button className="button-soft hidden sm:inline-flex" onClick={() => setView("trips")}>View all <ArrowRight className="ml-2 h-4 w-4" /></button></div>
