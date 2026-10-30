@@ -649,10 +649,10 @@ export default function Home() {
     try {
       const params = new URLSearchParams({ lat: String(coords.lat), lng: String(coords.lng) });
       if (dest) { params.set("toLat", String(dest.geometry.location.lat)); params.set("toLng", String(dest.geometry.location.lng)); }
-      const response = await fetch(`/api/rides?${params}`, { cache: "no-store" });
+      const response = await fetch(`/api/rides/nearby?${params}`, { cache: "no-store" });
       const data = await response.json().catch(() => ({}));
       if (response.status === 401) { setNearbyStatus("idle"); openAuth("signin"); return; }
-      if (!response.ok) throw new Error(data.error || "Could not load nearby trips");
+      if (!response.ok) throw new Error(data.error || `Could not load nearby trips (${response.status})`);
       const km = (value: number) => (value <= 0.5 ? "under 500 m" : `about ${value} km`);
       setNearbyTrips((data.trips || []).map((ride: any) => ({
         trip: { id: ride.id, from: ride.fromLabel, to: ride.toLabel, date: ride.date ? new Date(`${ride.date}T00:00:00`).toLocaleDateString("en-GH", { weekday: "short", day: "2-digit", month: "short" }) : "Soon", time: ride.time, seats: Number(ride.seats), joined: Number(ride.joined), contribution: 0, meetingPoint: "Choose together", host: ride.creatorName, hostSex: ride.creatorSex, status: "Open" as const, lifecycleStatus: "Open" as const },

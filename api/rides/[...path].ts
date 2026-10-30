@@ -12,7 +12,7 @@ export default async function handler(req: any, res: any) {
   const path = route(req);
   const parts = path ? path.split("/") : [];
   try {
-    if (parts.length === 0 && req.method === "GET") {
+    if (parts.length === 1 && parts[0] === "nearby" && req.method === "GET") {
       const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
       if (!account) return res.status(401).json({ error: "Sign in required" });
       const num = (v: any) => (v === undefined || v === "" ? undefined : Number(v));

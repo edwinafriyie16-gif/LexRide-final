@@ -89,7 +89,7 @@ async function startServer() {
   });
 
   // Shared rides use the same Supabase-backed store as the Vercel handlers.
-  app.get("/api/rides", async (req, res) => {
+  app.get("/api/rides/nearby", async (req, res) => {
     try {
       const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
       if (!account) return res.status(401).json({ error: "Sign in required" });
