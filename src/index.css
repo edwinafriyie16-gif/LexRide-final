@@ -116,3 +116,11 @@ button:active { transform: scale(.97); }
 .route-preview-line { position: absolute; top: 22%; left: 18%; height: 58%; width: 59%; border: 3px dashed rgba(185,86,56,.55); border-color: rgba(185,86,56,.55) transparent transparent rgba(185,86,56,.55); border-radius: 47% 55% 40% 60%; transform: rotate(23deg); }
 .route-preview-start, .route-preview-end { position: absolute; top: 27%; left: 17%; height: 18px; width: 18px; border: 4px solid #fff7ea; border-radius: 50%; background: #b95638; box-shadow: 0 3px 8px rgba(31,41,38,.18); }
 .route-preview-end { top: auto; right: 18%; bottom: 25%; left: auto; background: #1f2926; }
+
+/* Mobile bottom tab bar */
+.tabbar { position: fixed; inset: auto 0 0 0; z-index: 30; display: grid; grid-template-columns: repeat(4, 1fr); align-items: end; border-top: 1px solid #e8dfd2; background: rgba(255,253,250,.94); backdrop-filter: blur(18px); padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)); }
+.tab { display: flex; min-height: 52px; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 12px; color: #718078; font-size: 11px; font-weight: 700; }
+.tab-active { color: #b95638; }
+.tab-create { color: #b95638; }
+.tab-plus { display: inline-flex; height: 40px; width: 40px; margin-top: -14px; align-items: center; justify-content: center; border-radius: 999px; background: #b95638; color: #fffaf4; box-shadow: 0 8px 20px rgba(185,86,56,.3); }
+.tab-dot { position: absolute; top: -6px; right: -10px; display: inline-flex; height: 16px; min-width: 16px; align-items: center; justify-content: center; border-radius: 999px; background: #dfad3a; padding: 0 4px; color: #1f2926; font-size: 10px; font-weight: 800; }
