@@ -4,8 +4,8 @@
   "description": "Ghana's smart ride coordination app",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#120203",
-  "theme_color": "#e8192c",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
   "orientation": "portrait",
   "icons": [
     {
