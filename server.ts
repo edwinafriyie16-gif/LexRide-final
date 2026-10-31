@@ -80,7 +80,7 @@ async function startServer() {
     } catch (error) { return res.status(401).json({ error: error instanceof Error ? error.message : "Could not sign in" }); }
   });
   app.get("/api/auth/me", async (req, res) => {
-    try { return res.json({ account: await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session")) }); }
+    try { res.setHeader("Cache-Control", "private, no-store"); return res.json({ account: await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session")) }); }
     catch (error) { return res.status(500).json({ error: error instanceof Error ? error.message : "Could not read session" }); }
   });
   app.post("/api/auth/signout", async (req, res) => {

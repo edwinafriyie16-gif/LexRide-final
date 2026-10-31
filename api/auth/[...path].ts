@@ -30,6 +30,7 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({ account: result.account });
     }
     if (path === "me" && req.method === "GET") {
+      res.setHeader("Cache-Control", "private, no-store");
       return res.status(200).json({ account: await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session")) });
     }
     if (path === "signout" && req.method === "POST") {

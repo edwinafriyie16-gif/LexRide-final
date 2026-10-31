@@ -258,14 +258,19 @@ function RouteLine({ from, to }: { from: string; to: string }) {
     <div className="flex min-w-0 flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-2">
       <div className="flex min-w-0 items-center gap-2">
         <span className="h-2.5 w-2.5 shrink-0 rounded-full border-[3px] border-terracotta bg-sand" />
-        <span className="truncate font-semibold text-ink">{from}</span>
+        <span className="break-words font-semibold text-ink">{from}</span>
       </div>
       <div className="flex min-w-0 items-center gap-2">
         <ArrowRight className="ml-[-2px] h-3.5 w-3.5 shrink-0 text-slate/60 sm:ml-0" />
-        <span className="truncate font-semibold text-ink">{to}</span>
+        <span className="break-words font-semibold text-ink">{to}</span>
       </div>
     </div>
   );
+}
+
+function fullPlaceName(place: LocationSuggestion): string {
+  const full = (place.formatted_address || place.name).replace(/,\s*Ghana\s*$/i, "").trim();
+  return full.toLowerCase().startsWith(place.name.toLowerCase()) ? full : `${place.name}, ${full}`;
 }
 
 function LocationInput({ label, value, placeholder, onChange, onSelect, locked = false }: { label: string; value: string; placeholder: string; onChange: (value: string) => void; onSelect: (place: LocationSuggestion) => void; locked?: boolean }) {
@@ -333,9 +338,9 @@ function LocationInput({ label, value, placeholder, onChange, onSelect, locked =
         {suggestions.length > 0 && (
           <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 overflow-hidden rounded-xl border border-line bg-white shadow-xl">
             {suggestions.map((place) => (
-              <button key={`${place.name}-${place.geometry.location.lat}`} type="button" onClick={() => { onSelect(place); setSuggestions([]); }} className="block w-full border-b border-line px-3 py-2.5 text-left last:border-0 hover:bg-[#eff6ff]">
-                <span className="block truncate text-sm font-semibold text-ink">{place.name}</span>
-                <span className="mt-0.5 block truncate text-[11px] font-normal text-slate">{place.formatted_address || "Map location"}</span>
+              <button key={`${place.name}-${place.geometry.location.lat}`} type="button" onClick={() => { onSelect({ ...place, name: fullPlaceName(place) }); setSuggestions([]); }} className="block w-full border-b border-line px-3 py-2.5 text-left last:border-0 hover:bg-[#eff6ff]">
+                <span className="block break-words text-sm font-semibold text-ink">{place.name}</span>
+                <span className="mt-0.5 block break-words text-[11px] font-normal text-slate">{place.formatted_address || "Map location"}</span>
               </button>
             ))}
           </div>
@@ -577,7 +582,7 @@ export default function Home() {
   }, [view, chatMessages]);
 
   useEffect(() => {
-    fetch("/api/auth/me")
+    fetch("/api/auth/me", { cache: "no-store", credentials: "same-origin" })
       .then((response) => response.ok ? response.json() : null)
       .then((data) => { if (data?.account) setAccount(data.account); setAuthReady(true); })
       .catch(() => setAuthReady(true));
@@ -1041,6 +1046,14 @@ export default function Home() {
       const raw = await response.text();
       let data: any = {};
       try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
+      if (response.status === 401) {
+        const expiredTrip = joinTrip;
+        setAccount(null);
+        setJoinTrip(null);
+        openAuth("signin", expiredTrip);
+        toast.error("Your session expired. Please sign in again and your request will continue.");
+        return;
+      }
       if (!response.ok) throw new Error(data.error || `Join request failed (${response.status})`);
       const ride = data;
       const latest = ride.joined?.find((member: any) => member.firstName === guestName.trim() && member.status === "Waiting");
@@ -1230,7 +1243,7 @@ export default function Home() {
         const response = await fetch(`/api/reverse?lat=${coords.latitude}&lng=${coords.longitude}`);
         const data = await response.json();
         const place = data.result || fallback;
-        setForm((current) => ({ ...current, from: place.name }));
+        setForm((current) => ({ ...current, from: fullPlaceName(place) }));
         setSelectedLocations((current) => ({ ...current, from: place }));
         setCurrentLocationLocked(true);
         setLocationMessage(`Starting point: ${place.formatted_address || place.name}`);
