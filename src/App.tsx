@@ -212,12 +212,13 @@ function Logo() {
   );
 }
 
-type LiveItem = { trip: Trip; mine: boolean; departs: number };
+type LiveItem = { trip: Trip; mine: boolean; departs: number; myStatus?: "Waiting" | "Approved" };
 
 function mapLiveRide(ride: any): LiveItem {
   const departs = Date.parse(`${ride.date}T${ride.time}:00Z`);
   return {
     mine: !!ride.mine,
+    myStatus: ride.myStatus === "Approved" || ride.myStatus === "Waiting" ? ride.myStatus : undefined,
     departs,
     trip: { id: ride.id, from: ride.fromLabel, to: ride.toLabel, date: new Date(`${ride.date}T00:00:00`).toLocaleDateString("en-GH", { weekday: "short", day: "2-digit", month: "short" }), time: ride.time, seats: Number(ride.seats), joined: Number(ride.joined), contribution: Number(ride.contribution) || 0, meetingPoint: "Choose together", host: ride.creatorName, hostSex: ride.creatorSex, status: Number(ride.joined) >= Number(ride.seats) ? "Full" : "Open", lifecycleStatus: "Open" },
   };
@@ -234,8 +235,8 @@ function whenInfo(departs: number, time: string): { label: string; tone: string 
   return { label: day === today ? `Today ${time}` : `Tomorrow ${time}`, tone: "bg-[#eef2f7] text-slate" };
 }
 
-function LiveTripCard({ item, onJoin, onManage }: { item: LiveItem; onJoin: (trip: Trip) => void; onManage: () => void; key?: Key }) {
-  const { trip, mine, departs } = item;
+function LiveTripCard({ item, onJoin, onManage }: { item: LiveItem; onJoin: (trip: Trip, requestStatus?: HistoryTrip["requestStatus"]) => void; onManage: () => void; key?: Key }) {
+  const { trip, mine, departs, myStatus } = item;
   const left = Math.max(0, trip.seats - trip.joined);
   const when = whenInfo(departs, trip.time);
   return (
@@ -247,7 +248,7 @@ function LiveTripCard({ item, onJoin, onManage }: { item: LiveItem; onJoin: (tri
       <div className="mt-3"><RouteLine from={trip.from} to={trip.to} /></div>
       <div className="mt-3 flex items-center justify-between gap-3">
         <div className="min-w-0 text-xs text-slate"><span className="font-semibold text-ink">{left > 0 ? `${left} more ${left === 1 ? "person" : "people"} wanted` : "Trip is full"}</span><div className="mt-0.5 truncate">{trip.joined} of {trip.seats} seats taken · {trip.host.split(" ")[0]}</div></div>
-        {mine ? <button type="button" className="button-soft !px-4 !py-2.5 text-sm" onClick={onManage}>Your trip</button> : left > 0 ? <button type="button" className="button-primary !px-5 !py-2.5 text-sm" onClick={() => onJoin(trip)}>Join</button> : <button type="button" className="button-soft !px-4 !py-2.5 text-sm opacity-60" disabled>Full</button>}
+        {mine ? <button type="button" className="button-soft !px-4 !py-2.5 text-sm" onClick={onManage}>Your trip</button> : myStatus === "Approved" ? <button type="button" className="inline-flex items-center justify-center rounded-[13px] bg-[#dcf1e3] px-4 py-2.5 text-sm font-bold text-[#14532d]" onClick={() => onJoin(trip, "Approved")}><Check className="mr-1.5 h-4 w-4" /> Joined · Chat</button> : myStatus === "Waiting" ? <button type="button" className="button-soft !px-4 !py-2.5 text-sm" onClick={() => onJoin(trip, "Waiting")}>Requested · Waiting</button> : left > 0 ? <button type="button" className="button-primary !px-5 !py-2.5 text-sm" onClick={() => onJoin(trip)}>Join</button> : <button type="button" className="button-soft !px-4 !py-2.5 text-sm opacity-60" disabled>Full</button>}
       </div>
     </div>
   );
@@ -666,6 +667,7 @@ export default function Home() {
           lifecycleStatus: room.lifecycleStatus || "Open",
         };
         setHistoryTrips((items) => items.map((item) => item.id === tripId ? { ...item, requestStatus: "Approved" } : item));
+        setLiveTrips((items) => items.map((item) => item.trip.id === tripId ? { ...item, myStatus: "Approved" } : item));
         setChatMessages((room.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, createdAt: Number(message.createdAt) || undefined, mine: message.sender === account.fullName })));
         setJoinTrip(approvedTrip);
         setCreatedTrip(null);
@@ -1056,6 +1058,7 @@ export default function Home() {
       }
       if (!response.ok) throw new Error(data.error || `Join request failed (${response.status})`);
       const ride = data;
+      setLiveTrips((items) => items.map((item) => item.trip.id === joinTrip.id ? { ...item, myStatus: "Waiting" } : item));
       const latest = ride.joined?.find((member: any) => member.firstName === guestName.trim() && member.status === "Waiting");
       const request = { id: latest?.id || `guest-${Date.now()}`, name: guestName.trim(), sex: guestSex, status: "Waiting" as const };
       setGuestRequests((items) => items.some((item) => item.id === request.id)

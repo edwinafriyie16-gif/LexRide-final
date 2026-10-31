@@ -299,6 +299,7 @@ export interface LiveRide {
   creatorSex?: "Male" | "Female";
   contribution?: number;
   mine?: boolean;
+  myStatus?: "Waiting" | "Approved";
 }
 
 // Open trips leaving soon or that left up to 90 minutes ago (Ghana runs on UTC all year).
@@ -330,6 +331,10 @@ export async function listLiveRides(viewerAccountId?: string): Promise<LiveRide[
     creatorSex: trip.creator_sex ?? undefined,
     contribution: trip.contribution && trip.contribution > 0 ? trip.contribution : undefined,
     mine: !!viewerAccountId && trip.creator_account_id === viewerAccountId,
+    myStatus: viewerAccountId ? (() => {
+      const own = (byTrip.get(trip.id) || []).filter((member: any) => member.account_id === viewerAccountId);
+      return own.some((member) => member.status === "Approved") ? "Approved" as const : own.some((member) => member.status === "Waiting") ? "Waiting" as const : undefined;
+    })() : undefined,
   }));
 }
 
