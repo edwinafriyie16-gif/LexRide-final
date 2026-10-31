@@ -235,7 +235,7 @@ function whenInfo(departs: number, time: string): { label: string; tone: string 
   return { label: day === today ? `Today ${time}` : `Tomorrow ${time}`, tone: "bg-[#eef2f7] text-slate" };
 }
 
-function LiveTripCard({ item, onJoin, onManage }: { item: LiveItem; onJoin: (trip: Trip, requestStatus?: HistoryTrip["requestStatus"]) => void; onManage: () => void; key?: Key }) {
+function LiveTripCard({ item, onJoin, onManage, note }: { note?: string; item: LiveItem; onJoin: (trip: Trip, requestStatus?: HistoryTrip["requestStatus"]) => void; onManage: () => void; key?: Key }) {
   const { trip, mine, departs, myStatus } = item;
   const left = Math.max(0, trip.seats - trip.joined);
   const when = whenInfo(departs, trip.time);
@@ -246,6 +246,7 @@ function LiveTripCard({ item, onJoin, onManage }: { item: LiveItem; onJoin: (tri
         <span className="text-sm font-bold text-ink">{trip.contribution > 0 ? `GHS ${trip.contribution} each` : "Fare: agree in chat"}</span>
       </div>
       <div className="mt-3"><RouteLine from={trip.from} to={trip.to} /></div>
+      {note && <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#eef7f0] px-2.5 py-1 text-[11px] font-semibold text-forest"><Navigation className="h-3 w-3" />{note}</div>}
       <div className="mt-3 flex items-center justify-between gap-3">
         <div className="min-w-0 text-xs text-slate"><span className="font-semibold text-ink">{left > 0 ? `${left} more ${left === 1 ? "person" : "people"} wanted` : "Trip is full"}</span><div className="mt-0.5 truncate">{trip.joined} of {trip.seats} seats taken · {trip.host.split(" ")[0]}</div></div>
         {mine ? <button type="button" className="button-soft !px-4 !py-2.5 text-sm" onClick={onManage}>Your trip</button> : myStatus === "Approved" ? <button type="button" className="inline-flex items-center justify-center rounded-[13px] bg-[#dcf1e3] px-4 py-2.5 text-sm font-bold text-[#14532d]" onClick={() => onJoin(trip, "Approved")}><Check className="mr-1.5 h-4 w-4" /> Joined · Chat</button> : myStatus === "Waiting" ? <button type="button" className="button-soft !px-4 !py-2.5 text-sm" onClick={() => onJoin(trip, "Waiting")}>Requested · Waiting</button> : left > 0 ? <button type="button" className="button-primary !px-5 !py-2.5 text-sm" onClick={() => onJoin(trip)}>Join</button> : <button type="button" className="button-soft !px-4 !py-2.5 text-sm opacity-60" disabled>Full</button>}
@@ -540,7 +541,7 @@ export default function Home() {
   const [liveTrips, setLiveTrips] = useState<LiveItem[]>([]);
   const [liveStatus, setLiveStatus] = useState<"loading" | "ready" | "error">("loading");
   const [nearbyStatus, setNearbyStatus] = useState<"idle" | "locating" | "loading" | "ready" | "error">("idle");
-  const [nearbyTrips, setNearbyTrips] = useState<Array<{ trip: Trip; note: string }>>([]);
+  const [nearbyTrips, setNearbyTrips] = useState<Array<{ item: LiveItem; note: string }>>([]);
   const [nearbyCoords, setNearbyCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [nearbyDest, setNearbyDest] = useState<LocationSuggestion | undefined>();
   const [nearbyDestText, setNearbyDestText] = useState("");
@@ -667,7 +668,7 @@ export default function Home() {
           lifecycleStatus: room.lifecycleStatus || "Open",
         };
         setHistoryTrips((items) => items.map((item) => item.id === tripId ? { ...item, requestStatus: "Approved" } : item));
-        setLiveTrips((items) => items.map((item) => item.trip.id === tripId ? { ...item, myStatus: "Approved" } : item));
+        markTripStatus(tripId, "Approved");
         setChatMessages((room.messages || []).map((message: any) => ({ id: message.id, sender: message.sender, text: message.text, createdAt: Number(message.createdAt) || undefined, mine: message.sender === account.fullName })));
         setJoinTrip(approvedTrip);
         setCreatedTrip(null);
@@ -916,6 +917,11 @@ export default function Home() {
     return () => { stopped = true; window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisible); };
   }, [view, account?.id]);
 
+  const markTripStatus = (tripId: string, myStatus: "Waiting" | "Approved") => {
+    setLiveTrips((items) => items.map((item) => item.trip.id === tripId ? { ...item, myStatus } : item));
+    setNearbyTrips((items) => items.map((entry) => entry.item.trip.id === tripId ? { ...entry, item: { ...entry.item, myStatus } } : entry));
+  };
+
   const loadNearby = async (coords: { lat: number; lng: number }, dest?: LocationSuggestion) => {
     setNearbyStatus("loading");
     try {
@@ -927,7 +933,7 @@ export default function Home() {
       if (!response.ok) throw new Error(data.error || `Could not load nearby trips (${response.status})`);
       const km = (value: number) => (value <= 0.5 ? "under 500 m" : `about ${value} km`);
       setNearbyTrips((data.trips || []).map((ride: any) => ({
-        trip: { id: ride.id, from: ride.fromLabel, to: ride.toLabel, date: ride.date ? new Date(`${ride.date}T00:00:00`).toLocaleDateString("en-GH", { weekday: "short", day: "2-digit", month: "short" }) : "Soon", time: ride.time, seats: Number(ride.seats), joined: Number(ride.joined), contribution: Number(ride.contribution) || 0, meetingPoint: "Choose together", host: ride.creatorName, hostSex: ride.creatorSex, status: "Open" as const, lifecycleStatus: "Open" as const },
+        item: mapLiveRide(ride),
         note: ride.endKm !== undefined ? `Starts ${km(ride.startKm)} from you · ends ${km(ride.endKm)} from your stop` : `Starts ${km(ride.startKm)} from you`,
       })));
       setNearbyStatus("ready");
@@ -1058,7 +1064,7 @@ export default function Home() {
       }
       if (!response.ok) throw new Error(data.error || `Join request failed (${response.status})`);
       const ride = data;
-      setLiveTrips((items) => items.map((item) => item.trip.id === joinTrip.id ? { ...item, myStatus: "Waiting" } : item));
+      markTripStatus(joinTrip.id, "Waiting");
       const latest = ride.joined?.find((member: any) => member.firstName === guestName.trim() && member.status === "Waiting");
       const request = { id: latest?.id || `guest-${Date.now()}`, name: guestName.trim(), sex: guestSex, status: "Waiting" as const };
       setGuestRequests((items) => items.some((item) => item.id === request.id)
@@ -1318,7 +1324,7 @@ export default function Home() {
               <div className="mt-4"><LocationInput label="Where are you going? (optional)" value={nearbyDestText} placeholder="e.g. KNUST or Kejetia" onChange={(value) => { setNearbyDestText(value); if (nearbyDest) { setNearbyDest(undefined); if (nearbyCoords) void loadNearby(nearbyCoords); } }} onSelect={(place) => { setNearbyDestText(place.name); setNearbyDest(place); if (nearbyCoords) void loadNearby(nearbyCoords, place); }} /></div>
               {nearbyStatus === "loading" && <p className="mt-4 flex items-center gap-2 text-sm text-slate"><Loader2 className="h-4 w-4 animate-spin" /> Looking for trips…</p>}
               {nearbyStatus === "error" && <button type="button" className="button-soft mt-4" onClick={() => nearbyCoords ? void loadNearby(nearbyCoords, nearbyDest) : findNearby()}>Try again</button>}
-              {nearbyStatus === "ready" && nearbyTrips.length > 0 && <div className="mt-4 grid gap-4 lg:grid-cols-3">{nearbyTrips.map(({ trip, note }) => <TripCard key={trip.id} trip={trip} note={note} onJoin={join} onShare={shareTrip} />)}</div>}
+              {nearbyStatus === "ready" && nearbyTrips.length > 0 && <div className="mt-4 grid gap-3 md:grid-cols-2">{nearbyTrips.map(({ item, note }) => <LiveTripCard key={item.trip.id} item={item} note={note} onJoin={join} onManage={() => setView("trips")} />)}</div>}
               {nearbyStatus === "ready" && nearbyTrips.length === 0 && <p className="mt-4 rounded-xl bg-sand px-4 py-3 text-sm text-slate">No one is going exactly your way right now. See everyone’s trips below.</p>}
               <button type="button" className="mt-3 text-xs font-semibold text-terracotta underline" onClick={findNearby}>Refresh my location</button>
             </>}

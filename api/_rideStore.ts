@@ -235,6 +235,7 @@ export interface NearbyRide {
   startKm: number;
   endKm?: number;
   contribution?: number;
+  myStatus?: "Waiting" | "Approved";
 }
 
 // Open trips starting near (lat,lng) and, optionally, ending near (toLat,toLng).
@@ -280,6 +281,10 @@ export async function listNearbyRides(input: { lat: number; lng: number; toLat?:
       creatorName: trip.creator_name,
       creatorSex: trip.creator_sex ?? undefined,
       contribution: trip.contribution && trip.contribution > 0 ? trip.contribution : undefined,
+      myStatus: input.excludeAccountId ? (() => {
+        const own = (byTrip.get(trip.id) || []).filter((member: any) => member.account_id === input.excludeAccountId);
+        return own.some((member) => member.status === "Approved") ? "Approved" as const : own.some((member) => member.status === "Waiting") ? "Waiting" as const : undefined;
+      })() : undefined,
       startKm: bucketKm(haversineKm(lat, lng, trip.from_lat!, trip.from_lng!)),
       endKm: input.toLat !== undefined && input.toLng !== undefined && trip.to_lat != null && trip.to_lng != null ? bucketKm(haversineKm(input.toLat, input.toLng, trip.to_lat, trip.to_lng)) : undefined,
     });
