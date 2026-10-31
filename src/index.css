@@ -214,3 +214,143 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; t
 }
 
 .convo { min-width: 0; max-width: 100%; }
+
+
+/* ================================================================== */
+/* DESIGN + MOTION LAYER                                               */
+/* Springs/orchestration live in src/motion.tsx; this is the CSS half. */
+/* ================================================================== */
+
+:root {
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+}
+
+/* --- Ambient background: two slow-drifting colour blobs ------------- */
+.min-h-screen.bg-sand { background: transparent; }
+body::before, body::after { content: ''; position: fixed; z-index: -1; border-radius: 50%; filter: blur(70px); pointer-events: none; will-change: transform; }
+body::before { top: -180px; left: -160px; width: 520px; height: 520px; background: rgba(37,99,235,.13); animation: drift-a 22s ease-in-out infinite alternate; }
+body::after { right: -140px; bottom: -160px; width: 460px; height: 460px; background: rgba(245,166,35,.12); animation: drift-b 26s ease-in-out infinite alternate; }
+@keyframes drift-a { to { transform: translate3d(140px, 120px, 0) scale(1.15); } }
+@keyframes drift-b { to { transform: translate3d(-120px, -110px, 0) scale(1.2); } }
+@media (max-width: 767px) { body::before { width: 340px; height: 340px; } body::after { width: 320px; height: 320px; } }
+
+/* --- Page entrance: children of the keyed wrapper rise in, staggered - */
+.page-stagger > * { animation: rise-in .6s var(--ease-out) backwards; }
+.page-stagger > *:nth-child(2) { animation-delay: .07s; }
+.page-stagger > *:nth-child(3) { animation-delay: .14s; }
+.page-stagger > *:nth-child(4) { animation-delay: .21s; }
+.page-stagger > *:nth-child(n+5) { animation-delay: .28s; }
+.page-stagger > .hero-wrap { animation: none; }
+@keyframes rise-in { from { opacity: 0; transform: translateY(18px); } }
+
+/* --- Header: slides in; gains depth as you scroll (progressive) ----- */
+.site-header { animation: header-in .6s var(--ease-out) backwards; }
+@keyframes header-in { from { opacity: 0; transform: translateY(-100%); } }
+@keyframes header-depth { from { box-shadow: 0 0 0 rgba(15,23,42,0); } to { box-shadow: 0 10px 30px -14px rgba(15,23,42,.2); } }
+@supports (animation-timeline: scroll()) {
+  .site-header { animation: header-in .6s var(--ease-out) backwards, header-depth linear both; animation-timeline: auto, scroll(root); animation-range: normal, 0 90px; }
+}
+
+/* --- Brand mark ----------------------------------------------------- */
+.brand-mark { background: linear-gradient(145deg, #3b82f6, #1d4ed8); box-shadow: 0 6px 16px rgba(37,99,235,.35), inset 0 1px 0 rgba(255,255,255,.35); animation: mark-pop .8s var(--ease-spring) backwards .1s; transition: transform .35s var(--ease-spring); }
+button:hover > .flex > .brand-mark, .brand-mark:hover { transform: rotate(-8deg) scale(1.08); }
+@keyframes mark-pop { from { opacity: 0; transform: scale(.3) rotate(-120deg); } }
+
+/* --- Desktop nav: shared-layout sliding pill ------------------------ */
+.nav-link { position: relative; isolation: isolate; transition: color .2s ease; }
+.nav-link:hover, .nav-active { background: transparent; }
+.nav-link:hover:not(.nav-active) { background: rgba(230,236,245,.6); }
+.nav-pill { position: absolute; inset: 0; z-index: -1; border-radius: 10px; background: #e6ecf5; }
+
+/* --- Buttons: gradient, sheen sweep on hover ------------------------ */
+.button-primary { position: relative; overflow: hidden; background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%); box-shadow: 0 8px 20px rgba(37,99,235,.26), inset 0 1px 0 rgba(255,255,255,.25); }
+.button-primary:hover { background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%); transform: translateY(-1px); box-shadow: 0 14px 28px rgba(37,99,235,.32), inset 0 1px 0 rgba(255,255,255,.25); }
+.button-primary::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,.38) 50%, transparent 65%); transform: translateX(-120%); pointer-events: none; }
+.button-primary:hover::after { transform: translateX(120%); transition: transform .7s var(--ease-out); }
+.button-dark:hover { transform: translateY(-1px); box-shadow: 0 12px 24px rgba(15,23,42,.25); }
+.button-soft:hover, .filter-button:hover { transform: translateY(-1px); }
+.button-primary:active, .button-dark:active, .button-soft:active { transform: scale(.97); }
+.icon-button:hover { transform: translateY(-1px); }
+
+/* --- Cards (motion owns transform; CSS only handles shadow/border) -- */
+.trip-card, .live-card { transition: box-shadow .25s ease, border-color .25s ease; }
+.trip-card:hover { transform: none; }
+.live-card { box-shadow: 0 8px 24px rgba(15,23,42,.04); }
+.live-card:hover { border-color: #b6caf7; box-shadow: 0 20px 40px -12px rgba(37,99,235,.18); }
+.live-card .route-arrow { transition: transform .3s var(--ease-out); }
+.live-card:hover .route-arrow { transform: translateX(4px); }
+.live-card .route-start { position: relative; }
+.live-card .route-start::after { content: ''; position: absolute; inset: -3px; border-radius: 50%; border: 2px solid #2563eb; animation: ring 2.6s ease-out infinite; }
+@keyframes ring { from { transform: scale(1); opacity: .6; } to { transform: scale(2.2); opacity: 0; } }
+
+.seat-dot { display: inline-block; height: 8px; width: 8px; border-radius: 50%; border: 1.5px solid #b4c3d9; background: transparent; }
+.seat-dot-filled { border-color: #2563eb; background: #2563eb; }
+
+/* --- Skeleton shimmer ------------------------------------------------ */
+.skeleton { background: linear-gradient(100deg, #ffffff 30%, #eef2f9 50%, #ffffff 70%); background-size: 220% 100%; border: 1px solid #e8edf5; animation: shimmer-bg 1.4s linear infinite; }
+@keyframes shimmer-bg { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+
+/* --- Headline gradient shimmer (applied per word) -------------------- */
+.text-shimmer { background: linear-gradient(100deg, #2563eb 20%, #38bdf8 45%, #2563eb 70%); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer-text 5s linear infinite; }
+@keyframes shimmer-text { to { background-position: -220% 0; } }
+
+/* --- Hero scene ------------------------------------------------------- */
+.scene-wrap { width: 100%; max-width: 520px; margin-inline: auto; perspective: 1000px; }
+.scene { position: relative; aspect-ratio: 400 / 340; width: 100%; overflow: hidden; border: 1px solid #dbe5f5; border-radius: 28px; background: radial-gradient(120% 90% at 18% 0%, #e6efff 0%, #f6f9ff 46%, #fff3dc 100%); box-shadow: 0 40px 70px -34px rgba(37,99,235,.45), 0 1px 0 rgba(255,255,255,.8) inset; transform-style: preserve-3d; }
+.scene-grid { position: absolute; inset: 0; background-image: radial-gradient(rgba(37,99,235,.2) 1px, transparent 1px); background-size: 18px 18px; -webkit-mask-image: radial-gradient(circle at 55% 50%, #000 15%, transparent 75%); mask-image: radial-gradient(circle at 55% 50%, #000 15%, transparent 75%); }
+.scene-march { animation: march 1.1s linear infinite; }
+@keyframes march { to { stroke-dashoffset: -24; } }
+.scene-chip { position: absolute; z-index: 2; }
+.scene-chip-inner { display: flex; align-items: center; gap: 8px; white-space: nowrap; border: 1px solid rgba(255,255,255,.8); border-radius: 999px; background: rgba(255,255,255,.92); padding: 6px 12px 6px 6px; font-size: 12px; font-weight: 700; color: #0f172a; box-shadow: 0 14px 30px -10px rgba(15,23,42,.28); backdrop-filter: blur(10px); }
+.chip-icon { display: inline-flex; height: 24px; width: 24px; align-items: center; justify-content: center; border-radius: 999px; }
+.chip-a { top: 8%; left: 5%; }
+.chip-b { top: 50%; right: 4%; }
+.chip-c { right: 8%; bottom: 7%; }
+@media (max-width: 420px) { .scene-chip-inner { font-size: 11px; padding: 5px 10px 5px 5px; } .chip-icon { height: 22px; width: 22px; } }
+
+/* --- Bottom tab bar --------------------------------------------------- */
+.tab { position: relative; }
+.tab-indicator { position: absolute; top: -7px; left: 50%; height: 3px; width: 28px; margin-left: -14px; border-radius: 0 0 4px 4px; background: #2563eb; }
+.tab-active svg { animation: icon-pop .45s var(--ease-spring); }
+@keyframes icon-pop { 0% { transform: scale(.7) translateY(2px); } 60% { transform: scale(1.18) translateY(-3px); } 100% { transform: scale(1); } }
+.tab-plus { transition: transform .3s var(--ease-spring), box-shadow .3s ease; position: relative; }
+.tab-plus::after { content: ''; position: absolute; inset: 0; border-radius: 999px; border: 2px solid #2563eb; animation: ring 3.2s ease-out infinite 1s; }
+.tab-create:active .tab-plus { transform: scale(.9) rotate(90deg); }
+
+/* --- Badges pop in ----------------------------------------------------- */
+.tab-dot, .nav-count, .convo-badge { animation: badge-pop .45s var(--ease-spring) backwards; }
+@keyframes badge-pop { from { transform: scale(0); } }
+.wa-tick { animation: badge-pop .35s var(--ease-spring); }
+
+/* --- Sheets / toasts / banner (motion owns transform) ------------------ */
+.sheet-panel { animation: none; }
+.sheet-backdrop { background: rgba(15,23,42,.45); }
+.toast { position: relative; overflow: hidden; animation: none; }
+.toast-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; transform-origin: left; background: rgba(255,255,255,.55); }
+.msg-banner-wrap { left: 0; right: 0; margin-inline: auto; transform: none; animation: none; touch-action: pan-x; }
+
+/* --- Chat ---------------------------------------------------------------- */
+.wa-screen { animation: chat-in .38s var(--ease-out); }
+@keyframes chat-in { from { transform: translateX(32%); opacity: 0; } }
+.wa-send { transition: background-color .16s ease, box-shadow .16s ease; }
+.convo { transition: border-color .2s ease, background-color .2s ease, box-shadow .2s ease; }
+.convo:hover { border-color: #b6caf7; box-shadow: 0 14px 30px -12px rgba(37,99,235,.2); }
+
+/* --- Success card ---------------------------------------------------------- */
+.success-card { animation: pop-in .6s var(--ease-spring) backwards; }
+@keyframes pop-in { from { opacity: 0; transform: translateY(26px) scale(.95); } }
+.success-badge { position: relative; background: linear-gradient(145deg, #e6f6ec, #cdeedb); box-shadow: 0 10px 24px -8px rgba(22,121,74,.45); }
+
+/* --- Form fields -------------------------------------------------------------- */
+.field-input { transition: border-color .2s ease, box-shadow .25s ease, background-color .2s ease, transform .2s ease; }
+.field-input:focus { background: #fff; box-shadow: 0 0 0 4px rgba(37,99,235,.14); }
+
+/* --- Respect reduced motion (extends the existing global rule) ---------------- */
+@media (prefers-reduced-motion: reduce) {
+  body::before, body::after, .text-shimmer, .scene-march, .tab-plus::after, .live-card .route-start::after { animation: none !important; }
+  .page-stagger > * , .site-header, .wa-screen { animation: none !important; }
+}
+
+/* Tailwind utilities live in a cascade layer, so the unlayered .tabbar rule above would beat md:hidden. */
+@media (min-width: 768px) { .tabbar { display: none; } }
