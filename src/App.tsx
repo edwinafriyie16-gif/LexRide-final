@@ -1296,7 +1296,7 @@ export default function Home() {
 
           <section aria-label="Going your way" className="mt-8 rounded-3xl border border-line bg-white p-5 md:p-6">
             <div className="flex items-start justify-between gap-3"><div><h2 className="font-display text-xl font-bold tracking-[-0.03em]">Find people going your way</h2></div></div>
-            {nearbyStatus === "idle" && <><p className="mt-1 text-sm text-slate">Uses your location only to match you. Nobody else sees it.</p></>}
+            {nearbyStatus === "idle" && <><p className="mt-1 text-sm text-slate">Uses your location only to match you. Nobody else sees it.</p><button type="button" className="button-primary mt-3 w-full sm:w-auto" onClick={findNearby}><Navigation className="mr-2 h-4 w-4" /> Find trips near me</button></>}
             {nearbyStatus === "locating" && <p className="mt-4 flex items-center gap-2 text-sm text-slate"><Loader2 className="h-4 w-4 animate-spin" /> Finding your location…</p>}
             {(nearbyStatus === "loading" || nearbyStatus === "ready" || nearbyStatus === "error") && <>
               <div className="mt-4"><LocationInput label="Where are you going? (optional)" value={nearbyDestText} placeholder="e.g. KNUST or Kejetia" onChange={(value) => { setNearbyDestText(value); if (nearbyDest) { setNearbyDest(undefined); if (nearbyCoords) void loadNearby(nearbyCoords); } }} onSelect={(place) => { setNearbyDestText(place.name); setNearbyDest(place); if (nearbyCoords) void loadNearby(nearbyCoords, place); }} /></div>
