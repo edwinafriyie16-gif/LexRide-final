@@ -2,7 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { randomBytes } from "crypto";
-import { addMessage, canAccessTripChat, createRide, getChatSnapshot, getRide, getRideCreatorAccountId, getTripChatAccess, joinRide, listNearbyRides, redactApprovedRide, redactPublicRide, setMemberStatus, setRideLifecycleStatus } from "./api/_rideStore.js";
+import { addMessage, canAccessTripChat, createRide, getChatSnapshot, getRide, getRideCreatorAccountId, getTripChatAccess, joinRide, listLiveRides, listNearbyRides, redactApprovedRide, redactPublicRide, setMemberStatus, setRideLifecycleStatus } from "./api/_rideStore.js";
 import { deleteSession, getAccountFromToken, readCookie, signIn, signUp } from "./api/_authStore.js";
 
 interface SharedRideJoiner {
@@ -89,6 +89,17 @@ async function startServer() {
   });
 
   // Shared rides use the same Supabase-backed store as the Vercel handlers.
+  app.get("/api/rides/live", async (req, res) => {
+    try {
+      const viewer = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session")).catch(() => null);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.json({ trips: await listLiveRides(viewer?.id) });
+    } catch (error) {
+      console.error("[LiveRides] Error:", error);
+      return res.status(500).json({ error: "Could not load trips" });
+    }
+  });
+
   app.get("/api/rides/nearby", async (req, res) => {
     try {
       const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
@@ -112,9 +123,9 @@ async function startServer() {
     try {
       const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
       if (!account) return res.status(401).json({ error: "Sign in required" });
-      const { fromLabel, toLabel, fromLat, fromLng, toLat, toLng, date, time, seats, platform } = req.body || {};
+      const { fromLabel, toLabel, fromLat, fromLng, toLat, toLng, date, time, seats, contribution, platform } = req.body || {};
       if (!fromLabel || !toLabel || !time) return res.status(400).json({ error: "Missing required ride fields" });
-      return res.json(await createRide({ fromLabel, toLabel, fromLat, fromLng, toLat, toLng, date, time, seats, platform, creatorName: account.fullName, creatorSex: account.sex, creatorAccountId: account.id }));
+      return res.json(await createRide({ fromLabel, toLabel, fromLat, fromLng, toLat, toLng, date, time, seats, contribution, platform, creatorName: account.fullName, creatorSex: account.sex, creatorAccountId: account.id }));
     } catch (error) {
       console.error("[CreateRide] Error:", error);
       return res.status(500).json({ error: String(error) });

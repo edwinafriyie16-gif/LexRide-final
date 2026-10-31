@@ -1,4 +1,4 @@
-import { addMessage, canAccessTripChat, createRide, getChatSnapshot, getRide, listNearbyRides, getRideCreatorAccountId, getTripChatAccess, joinRide, redactApprovedRide, redactPublicRide, setMemberStatus } from "../_rideStore.js";
+import { addMessage, canAccessTripChat, createRide, getChatSnapshot, getRide, listLiveRides, listNearbyRides, getRideCreatorAccountId, getTripChatAccess, joinRide, redactApprovedRide, redactPublicRide, setMemberStatus } from "../_rideStore.js";
 import { getAccountFromToken, readCookie } from "../_authStore.js";
 
 function route(req: any) {
@@ -12,6 +12,11 @@ export default async function handler(req: any, res: any) {
   const path = route(req);
   const parts = path ? path.split("/") : [];
   try {
+    if (parts.length === 1 && parts[0] === "live" && req.method === "GET") {
+      const viewer = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session")).catch(() => null);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json({ trips: await listLiveRides(viewer?.id) });
+    }
     if (parts.length === 1 && parts[0] === "nearby" && req.method === "GET") {
       const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
       if (!account) return res.status(401).json({ error: "Sign in required" });
@@ -28,9 +33,9 @@ export default async function handler(req: any, res: any) {
     if (parts.length === 0 && req.method === "POST") {
       const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
       if (!account) return res.status(401).json({ error: "Sign in required" });
-      const { fromLabel, toLabel, fromLat, fromLng, toLat, toLng, date, time, seats, platform, creatorName, creatorSex } = req.body || {};
+      const { fromLabel, toLabel, fromLat, fromLng, toLat, toLng, date, time, seats, contribution, platform, creatorName, creatorSex } = req.body || {};
       if (!fromLabel || !toLabel || !time || !creatorName) return res.status(400).json({ error: "Missing required ride fields" });
-      return res.status(200).json(await createRide({ fromLabel, toLabel, fromLat, fromLng, toLat, toLng, date, time, seats, platform, creatorName, creatorSex, creatorAccountId: account.id }));
+      return res.status(200).json(await createRide({ fromLabel, toLabel, fromLat, fromLng, toLat, toLng, date, time, seats, contribution, platform, creatorName, creatorSex, creatorAccountId: account.id }));
     }
     if (parts.length === 1 && req.method === "GET") {
       const ride = await getRide(parts[0]);

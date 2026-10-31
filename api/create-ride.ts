@@ -6,9 +6,9 @@ export default async function handler(req: any, res: any) {
   try {
     const account = await getAccountFromToken(readCookie(req.headers.cookie, "lexride_session"));
     if (!account) return res.status(401).json({ error: "Sign in required" });
-    const { fromLabel, toLabel, fromLat, fromLng, toLat, toLng, date, time, seats, platform } = req.body || {};
+    const { fromLabel, toLabel, fromLat, fromLng, toLat, toLng, date, time, seats, contribution, platform } = req.body || {};
     if (!fromLabel || !toLabel || !time) return res.status(400).json({ error: "Missing route or departure time" });
-    const ride = await createRide({ fromLabel, toLabel, fromLat, fromLng, toLat, toLng, date, time, seats, platform, creatorName: account.fullName, creatorSex: account.sex, creatorAccountId: account.id });
+    const ride = await createRide({ fromLabel, toLabel, fromLat, fromLng, toLat, toLng, date, time, seats, contribution, platform, creatorName: account.fullName, creatorSex: account.sex, creatorAccountId: account.id });
     return res.status(201).json(ride);
   } catch (error) {
     console.error("[Create ride] Error:", error);

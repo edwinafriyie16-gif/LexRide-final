@@ -45,6 +45,7 @@ type TripRow = {
   to_lng: number | null;
   from_lat?: number | null;
   from_lng?: number | null;
+  contribution?: number | null;
   date: string | null;
   time: string;
   seats: number;
@@ -161,6 +162,7 @@ export async function createRide(input: {
   toLabel: string;
   fromLat?: number;
   fromLng?: number;
+  contribution?: number;
   toLat?: number;
   toLng?: number;
   date?: string;
@@ -172,10 +174,7 @@ export async function createRide(input: {
   creatorAccountId?: string;
 }): Promise<SharedRide> {
   const id = makeId();
-  const rows = await supabaseRequest<TripRow[]>("lexride_trip_rooms", {
-    method: "POST",
-    headers: { Prefer: "return=representation" },
-    body: JSON.stringify({
+  const row: Record<string, unknown> = {
       id,
       from_label: input.fromLabel,
       to_label: input.toLabel,
@@ -190,8 +189,17 @@ export async function createRide(input: {
       creator_name: input.creatorName,
       creator_sex: input.creatorSex ?? null,
       creator_account_id: input.creatorAccountId ?? null,
-    }),
-  });
+  };
+  const fare = Math.round(Number(input.contribution));
+  const insertRow = (body: Record<string, unknown>) => supabaseRequest<TripRow[]>("lexride_trip_rooms", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(body) });
+  let rows: TripRow[];
+  try {
+    rows = await insertRow(Number.isFinite(fare) && fare > 0 ? { ...row, contribution: Math.min(fare, 100000) } : row);
+  } catch (error) {
+    // The fare column may not exist yet; never block trip creation because of it.
+    if (error instanceof Error && error.message.includes("contribution")) rows = await insertRow(row);
+    else throw error;
+  }
   const tripId = rows[0]?.id || id;
   await recordSystemMessage(tripId, "Trip group created. Approved passengers will be able to join this chat.", true);
   const ride = await loadRide(tripId);
@@ -226,6 +234,7 @@ export interface NearbyRide {
   creatorSex?: "Male" | "Female";
   startKm: number;
   endKm?: number;
+  contribution?: number;
 }
 
 // Open trips starting near (lat,lng) and, optionally, ending near (toLat,toLng).
@@ -270,11 +279,58 @@ export async function listNearbyRides(input: { lat: number; lng: number; toLat?:
       joined,
       creatorName: trip.creator_name,
       creatorSex: trip.creator_sex ?? undefined,
+      contribution: trip.contribution && trip.contribution > 0 ? trip.contribution : undefined,
       startKm: bucketKm(haversineKm(lat, lng, trip.from_lat!, trip.from_lng!)),
       endKm: input.toLat !== undefined && input.toLng !== undefined && trip.to_lat != null && trip.to_lng != null ? bucketKm(haversineKm(input.toLat, input.toLng, trip.to_lat, trip.to_lng)) : undefined,
     });
   }
   return results.sort((a, b) => (a.date || "").localeCompare(b.date || "") || a.time.localeCompare(b.time) || a.startKm - b.startKm).slice(0, 20);
+}
+
+export interface LiveRide {
+  id: string;
+  fromLabel: string;
+  toLabel: string;
+  date: string;
+  time: string;
+  seats: number;
+  joined: number;
+  creatorName: string;
+  creatorSex?: "Male" | "Female";
+  contribution?: number;
+  mine?: boolean;
+}
+
+// Open trips leaving soon or that left up to 90 minutes ago (Ghana runs on UTC all year).
+export async function listLiveRides(viewerAccountId?: string): Promise<LiveRide[]> {
+  const now = Date.now();
+  const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const trips = await supabaseRequest<TripRow[]>(
+    `lexride_trip_rooms?lifecycle_status=eq.Open&date=gte.${day(now - 90 * 60000)}&date=lte.${day(now + 36 * 3600000)}&select=*&order=date.asc,time.asc&limit=80`,
+  );
+  const upcoming = trips.filter((trip) => {
+    if (!trip.date || !trip.time) return false;
+    const departs = Date.parse(`${trip.date}T${trip.time.slice(0, 5)}:00Z`);
+    return Number.isFinite(departs) && departs >= now - 90 * 60000 && departs <= now + 36 * 3600000;
+  }).slice(0, 30);
+  if (upcoming.length === 0) return [];
+  const ids = upcoming.map((trip) => encodeURIComponent(trip.id)).join(",");
+  const members = await supabaseRequest<any[]>(`lexride_trip_members?trip_id=in.(${ids})&status=neq.Declined&select=*&limit=1000`);
+  const byTrip = new Map<string, MemberRow[]>();
+  for (const member of members) byTrip.set(member.trip_id, [...(byTrip.get(member.trip_id) || []), member]);
+  return upcoming.map((trip) => ({
+    id: trip.id,
+    fromLabel: trip.from_label,
+    toLabel: trip.to_label,
+    date: trip.date as string,
+    time: trip.time.slice(0, 5),
+    seats: trip.seats,
+    joined: deduplicateMembers(byTrip.get(trip.id) || []).filter((member) => member.status !== "Declined").length + 1,
+    creatorName: trip.creator_name,
+    creatorSex: trip.creator_sex ?? undefined,
+    contribution: trip.contribution && trip.contribution > 0 ? trip.contribution : undefined,
+    mine: !!viewerAccountId && trip.creator_account_id === viewerAccountId,
+  }));
 }
 
 export async function getRide(id: string): Promise<SharedRide | undefined> {
